@@ -27,6 +27,7 @@ from utils.get_peak_resolution import get_top_peaks_resolution
 from utils.get_peak_prominence import get_top_peaks_prominence
 
 from utils.ftp_manager import FTPClient
+from utils.influxdb_manager import InfluxHandler
 
 """
 ============================================
@@ -54,6 +55,13 @@ class Gateway:
             user=self.username,
             pwd=self.pwd,
             path=self.server_path,
+            local_dir='/etc/config/scripts/SHM_Data/'
+        )
+        
+        # ISTANZIO GESTORE INFLUX
+        self.influx_handler = InfluxHandler(
+            url=self.influx_url,
+            token=self.influx_token,
             local_dir='/etc/config/scripts/SHM_Data/'
         )
         
@@ -738,7 +746,7 @@ class Gateway:
     # Trasmette i dati, ricevuti dai sensori, al server tramite FTP.
     # Se per il sensore in esame ci sono piu file, li trasmette tutti.
     def send_file_to_server(self, addr):
-        if addr in self.file2s_dict:
+        if addr in self.file2s_dict and self.file2s_dict[addr]:
             return self.ftp_handler.upload_files(
                 addr=addr,
                 files_to_send=self.file2s_dict[addr],
@@ -753,97 +761,15 @@ class Gateway:
             - log e pulizia
     """
     def send_file_to_influx(self, addr):
-        if addr in self.file2s_influx_dict:
-            n_file = len(self.file2s_influx_dict[addr])
-            
-            for n in range(n_file):
-                influx_status = self.create_influx_line_protocol(addr, self.file2s_influx_dict[addr][n])
-                self.append_history("\t Influx: " + influx_status + "\n")
-            self.file2s_influx_dict.pop(addr)
-
-    """
-        
-    """
-    def create_influx_line_protocol(self, addr, filename):
-        # Estrazione data dal nome file: 0013a200..._Xaxis_27_10_2024_...
-        date = "_".join(filename.split("_")[2:5])
-        path = "/etc/config/scripts/SHM_Data/" + filename
-        
-        try:
-            with open(path, 'r') as f:
-                # RIGA 1: Parametri (ora; range; odr; asse;)
-                parameters = f.readline().split(";")[:-1]
-                
-                # RIGA 2: Sincronizzazione (es: "Synced ")
-                type_of_sync = f.readline().strip().split(" ")[:-1]
-                
-                # RIGA 3: Valori Medi (temp; m1; m2; m3;)
-                mean_values = f.readline().split(";")[:-1]
-                
-                # RIGA 4: Salta la riga "First values"
-                f.readline()
-                
-                # RIGA 5: I dati accelerometrici veri
-                data = f.readline().split(";")[:-1]
-                data_float = [float(x) for x in data if x.strip()]
-
-            # --- LOGICA DI CALCOLO (Dal file di riferimento) ---
-            m1, m2, m3 = float(mean_values[1]), float(mean_values[2]), float(mean_values[3])
-            # Calcolo accelerazione totale efficace (RMS)
-            accrms = sqrt(pow(m1, 2) + pow(m2, 2) + pow(m3, 2))
-            # Calcolo angoli di inclinazione
-            phi = degrees(atan2(m2, m1))
-            theta = degrees(acos(m3 / accrms)) if accrms != 0 else 0
-            
-            # Gestione tempo e sincronizzazione
-            timestamp_base = datetime.strptime(date + ' ' + parameters[0], '%d_%m_%Y %H:%M:%S')
-            odr_val = float(parameters[2].replace(" Hz", ""))
-            sync_bit = "1.0" if type_of_sync and type_of_sync[0] == "Synced" else "0.0"
-
-            # --- PULIZIA PARAMETRI PER LINE PROTOCOL ---
-            # I Tag non devono avere spazi. Trasformiamo "X axis" in "X" o "X_axis"
-            clean_axis = parameters[3].replace(" axis", "").replace(" ", "_")
-            clean_range = parameters[1].replace(" ", "")
-
-            # --- COSTRUZIONE STRINGA INFLUX (Corretta) ---
-            res = []
-            # Struttura: measurement,tag1=val,tag2=val field1=val,field2=val timestamp
-            # NOTA: Non ci devono essere spazi tra le virgole dei Tag o dei Field!
-            base_str = (
-                "WS_Test_Data,id={addr},axis={axis} "  # Tag (Spazio qui)
-                "acc_range=\"{ar}\",temperature={temp},rms_x={rx},rms_y={ry},rms_z={rz}," # Field
-                "phi={phi},theta={theta},issync={sync},peak_freq={pf},max_mag={mm},data={dat} {utime}" # Field (Spazio qui) Timestamp
+        if addr in self.file2s_influx_dict and self.file2s_dict[addr]:
+            # passo i dati della fft per i campi del db
+            self.influx_handler.upload_influx_data(
+                addr=addr,
+                files_to_send=self.file2s_influx_dict[addr],
+                fft_result=self.fft_dict,
+                logger_callback=self.append_history
             )
 
-            for i, d in enumerate(data_float):
-                utime = int((time.mktime(timestamp_base.timetuple()) + i / odr_val) * 1000)
-                res.append(base_str.format(
-                    addr=addr,
-                    axis=clean_axis,
-                    ar=clean_range,
-                    temp=mean_values[0],
-                    rx=m1, ry=m2, rz=m3,
-                    phi=phi, theta=theta,
-                    sync=sync_bit,
-                    pf=self.fft_dict.get('peak_freq', -1),
-                    mm=self.fft_dict.get('max_mag', -1),
-                    dat=d,
-                    utime=utime
-                ))
-            payload = '\n'.join(res)
-            
-            # --- INVIO HTTP POST ---
-            headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': 'Token ' + self.influx_token}
-            req = urllib.request.Request(self.influx_url, data=payload.encode('utf-8'), headers=headers, method='POST')
-            
-            with urllib.request.urlopen(req) as response:
-                if response.status == 204:
-                    return f"OK: {filename}"
-                return f"Errore HTTP {response.status}"
-
-        except Exception as e:
-            return f"Errore: {str(e)}"
-        
     # Scrive una stringa nel file "history.log".
     def append_history(self, stringa):
         with open(self.logger_file, 'a') as f:

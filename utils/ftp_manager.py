@@ -25,7 +25,7 @@ class FTPClient:
         status = ""
         try:
             # crezione sessione e connessione
-            session - ftplib.FTP()
+            session = ftplib.FTP()
             session.connect(self.server, 21, 60.0)
             session.login(self.user, self.pwd)
             session.cwd(self.path)
@@ -48,7 +48,7 @@ class FTPClient:
                     
                 # UPLOAD
                 with open(full_local_path, 'rb') as file:
-                    session.storbinary(f'STOR {filename}', f)
+                    session.storbinary(f'STOR {filename}', file)
                     
                 # rimozione file locale
                 os.remove(full_local_path)
