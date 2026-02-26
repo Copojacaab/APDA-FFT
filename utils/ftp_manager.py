@@ -1,7 +1,6 @@
 import ftplib
 import os
 
-
 class FTPClient:
     def __init__(self, server, user, pwd, path, local_dir):
         self.server = server
@@ -11,26 +10,20 @@ class FTPClient:
         self.local_dir = local_dir
         
     def upload_files(self, addr, files_to_send, logger_callback):
-        """_summary_
-            Gestisce l'upload di una lista di file
-        Args:
-            addr : indirizzo del sensore 
-            files_to_send (_type_): lista di nomi di file da caricare
-            logger_callback (_type_): funzione per scrivere nell'history.log del gw
-        """
+        # Spedisce la lista di file al server e pulisce la cartella locale
         
         if not files_to_send:
             return ""
         
         status = ""
         try:
-            # crezione sessione e connessione
+            # Apro la sessione e mi connetto
             session = ftplib.FTP()
             session.connect(self.server, 21, 60.0)
             session.login(self.user, self.pwd)
             session.cwd(self.path)
             
-            # itero sui file preenti nella lista
+            # Giro sui file che mi sono stati passati
             while files_to_send:
                 filename = files_to_send[0]
                 
@@ -46,13 +39,13 @@ class FTPClient:
                     files_to_send.pop(0)
                     continue
                     
-                # UPLOAD
+                # INVIO EFFETTIVO
                 with open(full_local_path, 'rb') as file:
                     session.storbinary(f'STOR {filename}', file)
                     
-                # rimozione file locale
+                # Se l'upload è andato, cancello il file locale per non ingolfare il GW
                 os.remove(full_local_path)
-                logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamnte")
+                logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamente")
                 
                 files_to_send.pop(0)
             

@@ -15,7 +15,7 @@ class InfluxHandler:
         if not files_to_send:
             return 
         
-        # Usiamo list() per creare una copia su cui iterare in sicurezza
+        # Uso una copia della lista così posso rimuovere gli elementi mentre ciclo
         for filename in list(files_to_send):
             status = self._create_and_send(addr, filename, fft_result)
             logger_callback(f"\t[Influx] {status}\n")
@@ -23,21 +23,22 @@ class InfluxHandler:
         
     def _create_and_send(self, addr, filename, fft_result):
         date = "_".join(filename.split("_")[2:5])
-        path = os.path.join(self.local_dir, filename) # Corretto: usa la virgola
+        path = os.path.join(self.local_dir, filename) 
         
         try:
             if not os.path.exists(path):
                 return f"File {filename} non trovato"
             
-            with open(path, 'r') as f: # Rinominato in 'f' per coerenza
+            with open(path, 'r') as f:
+                # Leggo l'header del file log del sensore
                 parameters = f.readline().split(";")[:-1]
                 type_of_sync = f.readline().strip().split(" ")[:-1]
                 mean_values = f.readline().split(";")[:-1]
-                f.readline() # Salta "First values"
+                f.readline() # Salto la riga "First values"
                 data = f.readline().split(";")[:-1]
                 data_float = [float(x) for x in data if x.strip()]
 
-            # --- Calcoli Fisici ---
+            # --- Calcoli Fisici (RMS e Angoli) ---
             m1, m2, m3 = float(mean_values[1]), float(mean_values[2]), float(mean_values[3])
             accrms = sqrt(pow(m1, 2) + pow(m2, 2) + pow(m3, 2))
             phi = degrees(atan2(m2, m1))
@@ -51,6 +52,7 @@ class InfluxHandler:
             clean_range = parameters[1].replace(" ", "")
 
             res = []
+            # Stringa base per InfluxDB (Line Protocol)
             base_str = (
                 "WS_Test_Data,id={addr},axis={axis} "
                 "acc_range=\"{ar}\",temperature={temp},rms_x={rx},rms_y={ry},rms_z={rz},"
@@ -58,6 +60,7 @@ class InfluxHandler:
             )
 
             for i, d in enumerate(data_float):
+                # Calcolo il timestamp per ogni singolo campione basandomi sull'ODR
                 utime = int((time.mktime(timestamp_base.timetuple()) + i / odr_val) * 1000)
                 res.append(base_str.format(
                     addr=addr, axis=clean_axis, ar=clean_range,
@@ -72,6 +75,7 @@ class InfluxHandler:
             headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': f'Token {self.token}'}
             req = urllib.request.Request(self.url, data=payload.encode('utf-8'), headers=headers, method='POST')
             
+            # Spedizione POST a Influx
             with urllib.request.urlopen(req, timeout=10) as response:
                 if response.status == 204:
                     return f"OK: {filename}"
