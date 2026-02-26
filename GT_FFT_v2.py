@@ -38,22 +38,14 @@ class Gateway:
         self.device_dict = dict()
         self.config_dict = dict()
         self.file2s_dict = dict()
-        
         self.file2s_influx_dict = dict()
-        self.influx_url = "http://192.168.1.52:8086/api/v2/write?org=4853047a5696ea95&bucket=test&precision=ms"
-        self.influx_token = "6p1PobT2__TBA5SU9mPBud3B_fxrrv1Ysi7BO2CdsQNVnlQ2dhtlvjS_cCUXtDgUQrpMigMq0VEqp76obQ4oLQ=="
+        
         self.open_file_dict = dict()
         self.pack_num_dict = dict()
         self.first_data_dict = dict()
-
-        self.logger_file = '/etc/config/scripts/SHM_Data/history.log'
-        self.device_file = '/etc/config/scripts/SHM_Data/devices.txt'
-        self.config_file = '/etc/config/scripts/config.txt'
-
-        self.server_name = 'ftp.wisepower.it'
-        self.username = '1451303@aruba.it'
-        self.pwd = 'QWEasz123*'
-        self.server_path = "www.wisepower.it/SHM_Files/Test_Ufficio"
+        
+        # Carico config FTP, influx e gw dal config
+        self.load_gateway_config()
 
         self.original_payload = ''
         self.delay = 0
@@ -63,7 +55,7 @@ class Gateway:
         self.device = self.get_device()
 
         self.fft_dict = dict(peak_freq = -1, max_mag = -1, process_time = -1, wall_time = -1, percentage_cpu = -1, memrss = -1)
-        self.is_flexibile_structure = True
+        
         self.device.open() # Apertura della connessione 
 
         # cancella il file che gestisce i sensori
@@ -73,6 +65,36 @@ class Gateway:
         while True: 
             self.main()
 
+    def load_gateway_config(self):
+        config_path = "etc/config/scripts/gw_config.json"   
+        
+        try:
+            with open(config_path, 'r') as file:
+                config = json.load(file)
+                
+                # parametri FTP
+                self.server_name = config['ftp']['server']
+                self.username = config['ftp']['user']
+                self.pwd = config['ftp']['pwd']
+                self.server_path = config['ftp']['path']
+                
+                # parametri influx
+                self.influx_url = config['influxdb']['url']
+                self.influx_token = config['influxdb']['token']
+                
+                # percorsi file e impostazioni gateway
+                self.logger_file = config['gateway']['logger_file']
+                self.device_file = config['gateway']['device_file']
+                self.config_file = config['gateway']['config_file']
+                self.is_flexibile_structure = config['gateway'].get('is_flexibile_structure', True)
+                
+                print("Configurazione caricata con successo")
+        except Exception as e: 
+            # in caso di errore fermo esecuzione 
+            self.append_history(f"ERRORE CRITICO nel caricamento della configurazione: {e}")
+            exit(1)
+            
+            
     def get_device(self):
         device = xbee.get_device()
         return device

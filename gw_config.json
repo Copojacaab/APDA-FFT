@@ -1,0 +1,20 @@
+{
+    "ftp": {
+        "server": "ftp.wisepower.it",
+        "user": "1451303@aruba.it",
+        "pwd": "QWEasz123",
+        "path": "www.wisepower.it/SHM_Files/Test_Ufficio"
+    },
+    "influxdb": {
+        "url": "http://192.168.1.52:8086/api/v2/write?org=4853047a5696ea95&bucket=test&precision=ms",
+        "token": "6p1PobT2__TBA5SU9mPBud3B_fxrrv1Ysi7BO2CdsQNVnlQ2dhtlvjS_cCUXtDgUQrpMigMq0VEqp76obQ4oLQ==",
+        "org": "4853047a5696ea95",
+        "bucket": "test"
+    },
+    "gateway": {
+        "logger_file": "/etc/config/scripts/SHM_Data/history.log",
+        "device_file": "/etc/config/scripts/SHM_Data/devices.txt",
+        "config_file": "/etc/config/scripts/config.txt",
+        "is_flexibile_structure": true
+    }
+}
