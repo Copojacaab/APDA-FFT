@@ -733,7 +733,7 @@ class Gateway:
                     self.file2s_dict[addr] = [file2send]
                 self.open_file_dict.pop(addr)
                 if addr in self.first_data_dict: self.first_data_dict.pop(addr)
-            elif n_pack > self.pack_num_dict[addr] + 1:
+            elif n_pack > self.pack_num_dict[process_dataaddr] + 1:
                 with open(self.open_file_dict[addr], 'a') as f:
                     status = '\tMissing packets from %d to %d - %s\n' % (self.pack_num_dict[addr] + 1, n_pack - 1, addr)
                     f.write('* MISSING PACKETS FROM %d TO %d *;' % (self.pack_num_dict[addr] + 1, n_pack - 1))
