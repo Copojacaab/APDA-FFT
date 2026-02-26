@@ -4,7 +4,6 @@
 # coding=utf-8
 import os
 import cmath
-import ftplib
 import ctypes
 import resource
 from digidevice import xbee
@@ -27,6 +26,8 @@ from utils.load_data import load_sensor
 from utils.get_peak_resolution import get_top_peaks_resolution
 from utils.get_peak_prominence import get_top_peaks_prominence
 
+from utils.ftp_manager import FTPClient
+
 """
 ============================================
 """
@@ -47,6 +48,15 @@ class Gateway:
         # Carico config FTP, influx e gw dal config
         self.load_gateway_config()
 
+        # ISTANZIO GESTORE FTP
+        self.ftp_handler = FTPClient(
+            server=self.server_name,
+            user=self.username,
+            pwd=self.pwd,
+            path=self.server_path,
+            local_dir='/etc/config/scripts/SHM_Data/'
+        )
+        
         self.original_payload = ''
         self.delay = 0
         self.delay_time = 0
@@ -66,8 +76,9 @@ class Gateway:
             self.main()
 
     def load_gateway_config(self):
-        config_path = "etc/config/scripts/gw_config.json"   
+        config_path = "/etc/config/scripts/gw_config.json"   
         
+        self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
         try:
             with open(config_path, 'r') as file:
                 config = json.load(file)
@@ -727,39 +738,13 @@ class Gateway:
     # Trasmette i dati, ricevuti dai sensori, al server tramite FTP.
     # Se per il sensore in esame ci sono piu file, li trasmette tutti.
     def send_file_to_server(self, addr):
-        status = 'Server step not completed'
         if addr in self.file2s_dict:
-            file_number = len(self.file2s_dict[addr])
-            try:
-                session = ftplib.FTP()
-                session.connect(self.server_name, 21, 60.0)
-                session.login(self.username, self.pwd)
-                session.cwd(self.server_path)
-                for i in range(file_number):
-                    filename = self.file2s_dict[addr][0]
-                    self.append_history(f"\tTentativo upload file: {filename}\n")
-                    if not filename:
-                        self.append_history("\tNome file vuoto, skipping\n")
-                        self.file2s_dict[addr].pop(0)
-                        continue
-                    path = "/etc/config/scripts/SHM_Data/" + filename
-                    if not os.path.exists(path):
-                        self.append_history(f"\tFile {filename} not found, skipping\n")
-                        self.file2s_dict[addr].pop(0)
-                        continue
-                    with open(path, 'rb') as f:
-                        session.storbinary('STOR ' + filename, f)
-                    os.remove(path)
-                    self.append_history(f"\tFile {filename} transferred correctly\n")
-                    self.file2s_dict[addr].pop(0)
-                session.close()
-                status = ''
-            except Exception as e:
-                self.append_history(f"\tErrore FTP: {e}\n")
-                status = str(e)
-        else:
-            status = ''
-        return status
+            return self.ftp_handler.upload_files(
+                addr=addr,
+                files_to_send=self.file2s_dict[addr],
+                logger_callback=self.append_history
+            )
+        return ""
         
     """
         Gestore della coda: processa tutti i file in attesa per sensore
