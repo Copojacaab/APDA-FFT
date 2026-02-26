@@ -1,5 +1,5 @@
 
-import numpy
+import statistics
 '''
     calcola la larghezza a meta ampiezza del picco
 '''
@@ -49,8 +49,8 @@ def get_top_peaks_resolution(fft_res, fs, k=5):
     frequencies = [i * (fs / n) for i in range(half_len)]
     
     # 2. calcolo soglia minima
-    avg = numpy.mean(magnitudes)
-    std = numpy.std(magnitudes)
+    avg = statistics.mean(magnitudes)
+    std = statistics.stdev(magnitudes)
     
     threshold = avg + 2 * std
     
