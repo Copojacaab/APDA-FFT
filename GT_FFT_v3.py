@@ -37,14 +37,14 @@ class Gateway:
     # Inizializzazione della classe Gateway().
     def __init__(self):
         
-        self.device_dict = dict()
-        self.config_dict = dict()
-        self.file2s_dict = dict()
-        self.file2s_influx_dict = dict()
-        
-        self.open_file_dict = dict()
-        self.pack_num_dict = dict()
-        self.first_data_dict = dict()
+        self.device_dict = dict()                               #chi e' online?
+        self.config_dict = dict()                               #config di per ogni device
+        self.file2s_dict_ftp = dict()                           #file da inviare al server
+        self.file2s_influx_dict = dict()                        #file da inviare a influx
+
+        self.open_file_dict = dict()                            #file aperti
+        self.pack_num_dict = dict()                             #numero pacchetto atteso
+        self.first_data_dict = dict()                           #baseline accellerometro
         
         # Carico config FTP, influx e gw dal config
         self.load_gateway_config()
@@ -156,6 +156,7 @@ class Gateway:
         except Exception as e:
             self.append_history(f"\t[ERROR] Errore in _process_data_stream per {addr}: {str(e)}")
             return []
+        
     def get_device(self):
         device = xbee.get_device()
         return device
@@ -351,14 +352,17 @@ class Gateway:
         else: sync = 'Unknown;\n'
 
         mean_val = self.decode_payload(payload[23:31], 0)
-        acq_data = self._process_stream_data(payload[31:], addr, self.first_data_dict[addr], is_append=False)
 
+        # crea file
         filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + axis + '_' + date_time + '.log'
         self.open_file_dict[addr] = filename
+        self.pack_num_dict[addr] = 1
+
         with open(self.open_file_dict[addr], 'w+') as f:
             f.write(recv_time + ";" + acc_range + acc_odr + acc_axis + sync + mean_val[0] + ";" + mean_val[1] + ";" + mean_val[2] + ";" + mean_val[3] + ";\n" + str(first_data_x) + ";" + str(first_data_y) + ";" + str(first_data_z) + ";\n")      
-            for d in acq_data:
-                f.write(d + ';')
+            
+        # processa e scrivi dati
+        acq_data = self._process_stream_data(payload[31:], addr, self.first_data_dict[addr], is_append=True)
 
     # Processa il contenuto del pacchetto 0xD2 (continuazione stream di dati).
     # 1 - Verifica che il numero del pacchetto sia quello aspettato, nel caso apre un nuovo file;
@@ -371,7 +375,7 @@ class Gateway:
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
                 filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
-                self.file2s_dict[addr] = [filename]
+                self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
 
@@ -405,7 +409,7 @@ class Gateway:
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
                 filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
-                self.file2s_dict[addr] = [filename]
+                self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
         first_val = self.first_data_dict.get(addr, 0)
@@ -414,27 +418,28 @@ class Gateway:
         """
         ==================================
         """
-        if addr in self.open_file_dict:
+
+        if addr in self.open_file_dict and self.open_file_dict[addr]:
             full_path = self.open_file_dict[addr]
-            file2send = full_path.replace('/etc/config/scripts/SHM_Data/', '') if addr in self.open_file_dict else None
-        else:
-            full_path = None
-            file2send = None
-            self.append_history(f"\t[WANR] Nessun file aperto per {addr}")
-            if addr in self.file2s_dict:
-                self.file2s_dict[addr].append(file2send)
+            file2send = full_path.replace('/etc/config/scripts/SHM_Data/', '') 
+
+            # aggiunge file valido alla coda
+            if addr in self.file2s_dict_ftp:
+                self.file2s_dict_ftp[addr].append(file2send)
             else:
-                self.file2s_dict[addr] = [file2send]
-            # chiamata fft
+                self.file2s_dict_ftp[addr] = file2send
+
             res_fft = self.work_flow_fft(full_path)
-            
+
             # aggiunta alla coda influxdb
             if checkF_status == '':
                 if addr in self.file2s_influx_dict:
                     self.file2s_influx_dict[addr].append(file2send)
                 else:
                     self.file2s_influx_dict[addr] = [file2send]
-            
+        else:
+            self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
+
         if addr in self.open_file_dict:
             self.open_file_dict.pop(addr)
         if addr in self.first_data_dict:
@@ -482,10 +487,10 @@ class Gateway:
 
         file2send = filename.replace('/etc/config/scripts/SHM_Data/', '')
         if file2send:  # <-- controllo aggiunto
-            if addr in self.file2s_dict:
-                self.file2s_dict[addr].append(file2send)
+            if addr in self.file2s_dict_ftp:
+                self.file2s_dict_ftp[addr].append(file2send)
             else:
-                self.file2s_dict[addr] = [file2send]
+                self.file2s_dict_ftp[addr] = [file2send]
 
     # Processa il contenuto del pacchetto 0xC1 (evento vibrazinale).
     # 1 - Traduce i dati e li scrive in un nuovo file.
@@ -505,10 +510,10 @@ class Gateway:
 
         file2send = filename.replace('/etc/config/scripts/SHM_Data/', '')
         if file2send:  # <-- controllo aggiunto
-            if addr in self.file2s_dict:
-                self.file2s_dict[addr].append(file2send)
+            if addr in self.file2s_dict_ftp:
+                self.file2s_dict_ftp[addr].append(file2send)
             else:
-                self.file2s_dict[addr] = [file2send]
+                self.file2s_dict_ftp[addr] = [file2send]
 
         server_status = self.send_file_to_server(addr)
         self.append_history("\t" + server_status + "\n")
@@ -762,10 +767,10 @@ class Gateway:
                     status = '\tAnomalous closure for data stream - %s\n' % self.open_file_dict[addr]
                     f.write('* INCOMPLETE TRANSMISSION *;')
                 file2send = self.open_file_dict[addr].replace('/etc/config/scripts/SHM_Data/', '')
-                if addr in self.file2s_dict:
-                    self.file2s_dict[addr].append(file2send)
+                if addr in self.file2s_dict_ftp:
+                    self.file2s_dict_ftp[addr].append(file2send)
                 else:
-                    self.file2s_dict[addr] = [file2send]
+                    self.file2s_dict_ftp[addr] = [file2send]
                 self.open_file_dict.pop(addr)
                 if addr in self.first_data_dict: self.first_data_dict.pop(addr)
             elif n_pack > self.pack_num_dict[addr] + 1:
@@ -781,14 +786,43 @@ class Gateway:
     # Trasmette i dati, ricevuti dai sensori, al server tramite FTP.
     # Se per il sensore in esame ci sono piu file, li trasmette tutti.
     def send_file_to_server(self, addr):
-        if addr in self.file2s_dict and self.file2s_dict[addr]:
-            return self.ftp_handler.upload_files(
+        """
+        Trasmette i dati al server tramite FTP.
+        Se l'upload ha successo, cancella i file locali.
+        """
+        if addr in self.file2s_dict_ftp and self.file2s_dict_ftp[addr]:
+            result = self.ftp_handler.upload_files(
                 addr=addr,
-                files_to_send=self.file2s_dict[addr],
+                files_to_send=self.file2s_dict_ftp[addr],
                 logger_callback=self.append_history
             )
+            
+            # ✅ Se upload riuscito, pulisci i file
+            if "OK" in result or "success" in result.lower():
+                self._cleanup_files(addr, self.file2s_dict_ftp[addr])
+                self.file2s_dict_ftp[addr] = []  # Svuota la coda
+            
+            return result
         return ""
+    
+    def _cleanup_files(self, addr, files_list):
+        """
+        Cancella i file dalla memoria locale dopo un invio riuscito.
         
+        Args:
+            addr (str): Indirizzo dispositivo
+            files_list (list): Lista di nomi file da cancellare
+        """
+        base_path = '/etc/config/scripts/SHM_Data/'
+        for filename in files_list:
+            full_path = base_path + filename
+            try:
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+                    self.append_history(f"\t[CLEANUP] File rimosso: {filename}\n")
+            except Exception as e:
+                self.append_history(f"\t[ERROR] Impossibile rimuovere {filename}: {str(e)}\n")
+
     """
         Gestore della coda: processa tutti i file in attesa per sensore
             - verifica se in file2s_influx_dict ci sono file per l'invio
@@ -796,16 +830,25 @@ class Gateway:
             - log e pulizia
     """
     def send_file_to_influx(self, addr):
+        """
+        Trasmette i dati a InfluxDB.
+        Se l'upload ha successo, cancella i file locali.
+        """
         if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
-            if addr not in self.file2s_dict or not self.file2s_dict[addr]:
-                self.append_history(f"\t[WARN] Nessun file in file2s_dict per {addr}")
-            # passo i dati della fft per i campi del db
-            self.influx_handler.upload_influx_data(
-                addr=addr,
-                files_to_send=self.file2s_influx_dict[addr],
-                fft_result=self.fft_dict,
-                logger_callback=self.append_history
-            )
+            try:
+                self.influx_handler.upload_influx_data(
+                    addr=addr,
+                    files_to_send=self.file2s_influx_dict[addr],
+                    fft_result=self.fft_dict,
+                    logger_callback=self.append_history
+                )
+                
+                # ✅ Se upload riuscito, pulisci i file
+                self._cleanup_files(addr, self.file2s_influx_dict[addr])
+                self.file2s_influx_dict[addr] = []  # Svuota la coda
+                
+            except Exception as e:
+                self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
 
     # Scrive una stringa nel file "history.log".
     def append_history(self, stringa):
