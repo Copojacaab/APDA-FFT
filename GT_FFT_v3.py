@@ -427,7 +427,7 @@ class Gateway:
             if addr in self.file2s_dict_ftp:
                 self.file2s_dict_ftp[addr].append(file2send)
             else:
-                self.file2s_dict_ftp[addr] = file2send
+                self.file2s_dict_ftp[addr] = [file2send]
 
             res_fft = self.work_flow_fft(full_path)
 
@@ -797,9 +797,8 @@ class Gateway:
                 logger_callback=self.append_history
             )
             
-            # ✅ Se upload riuscito, pulisci i file
+            # se upload riuscito svuota la coda (pulizia file in ftp_manager)
             if "OK" in result or "success" in result.lower():
-                self._cleanup_files(addr, self.file2s_dict_ftp[addr])
                 self.file2s_dict_ftp[addr] = []  # Svuota la coda
             
             return result
@@ -843,8 +842,7 @@ class Gateway:
                     logger_callback=self.append_history
                 )
                 
-                # ✅ Se upload riuscito, pulisci i file
-                self._cleanup_files(addr, self.file2s_influx_dict[addr])
+                # Se upload riuscito (pulizia file in ftp_manager)
                 self.file2s_influx_dict[addr] = []  # Svuota la coda
                 
             except Exception as e:
