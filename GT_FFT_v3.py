@@ -64,13 +64,26 @@ class Gateway:
             token=self.influx_token,
             local_dir='/etc/config/scripts/SHM_Data/'
         )
-        
+        # ISTANIO STRUTTURE PER CONFIG SENSORE
         self.RANGE_MAP = {'2g': 0x01, '4g': 0x02, '8g': 0x03}
-        self.ODR_MAP = {
-            '31_25Hz': 0x08, '62_5hz': 0x10, '125Hz': 0x20,
-            '250Hz': 0x40, '500Hz': 0x80
+        self.ODR_MAP = {'31_25Hz': 0x08, '62_5Hz': 0x10, '125Hz': 0x20, '250Hz': 0x40}
+        self.AXIS_MAP = {
+            'X': 0x100, 'Y': 0x200, 'Z': 0x400, 
+            'XY': 0x300, 'XZ': 0x500, 'YZ': 0x600, 'XYZ': 0x700
         }
-        self.AXIS_MAP = {}
+        self.DATAKB_MAP = {'2k': 0x800, '4k': 0x1000, '8k': 0x2000, '16k': 0x4000, '32k': 0x8000}
+    
+        # Mappe specifiche per Sincronizzazione e Invio
+        self.SEND_TIME_MAP = {'1h': 0x0, '2h': 0x01, '3h': 0x02, '4h': 0x03, '6h': 0x04, '8h': 0x05}
+        self.SYNC_MAP = {'SYNC1': 0x00} # Default SYNC2 = 0x08
+
+        # Mappe specifiche per l'Hardware del Trigger (Shock)
+        self.TRIG_FREQ_MAP = {'12_5Hz': 0x08, '25Hz': 0x10, '50Hz': 0x20, '100Hz': 0x40, '200Hz': 0x80}
+        self.BW_MAP = {'ODR2': 0x100}   # Default ODR4 = 0x200
+        self.PWR_MAP = {'N': 0x400, 'L': 0x800, 'UL': 0x1000}
+        """
+
+        """
         self.original_payload = ''
         self.delay = 0
         self.delay_time = 0
@@ -90,6 +103,25 @@ class Gateway:
             self.main()
 
 # HELPER FUNCTIONS
+    def _get_current_datetime(self):
+        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+        return date_time
+    
+    def _handle_stream_continuity(self, payload, addr, date_time):
+        n_pck = (payload[1] << 8) | payload[2]
+        checkF_status = self.check_files(addr, n_pck)
+
+        if checkF_status != '':
+            self.append_history("\t" + checkF_status + "\n")
+            if "Anomalous closure" in checkF_status:
+                filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
+                self._add_to_ftp_queue(addr, filename) # Vedi punto 4 sotto
+                with open(filename, 'w+') as f:
+                    f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+
+        return n_pck, checkF_status
+
+
     def load_gateway_config(self):
         config_path = "/etc/config/scripts/gw_config.json"   
         
@@ -275,7 +307,7 @@ class Gateway:
         peaks_list = []
         i = 1
         # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
-        while f'peak_freq_{i}' in self.fft_dict:
+        while f'peak_freq_{i}' in current_fft:
             freq = current_fft[f'peak_freq_{i}']
             mag = current_fft[f'max_mag_{i}']
             peaks_list.append(f"f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
@@ -379,16 +411,9 @@ class Gateway:
     # 1 - Verifica che il numero del pacchetto sia quello aspettato, nel caso apre un nuovo file;
     # 2 - Traduce i dati e li scrive nel file.
     def process_mid_stream(self, payload, addr):
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        n_pck = (payload[1] << 8) | payload[2]
-        checkF_status = self.check_files(addr, n_pck)
-        if checkF_status != '':
-            self.append_history("\t" + checkF_status + "\n")
-            if "Anomalous closure" in checkF_status:
-                filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
-                self.file2s_dict_ftp[addr] = [filename]
-                with open(filename, 'w+') as f:
-                    f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+        date_time = self._get_current_datetime()
+        
+        n_pck, checkF_status = self._handle_stream_continuity(payload, addr, date_time)
 
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
@@ -413,16 +438,11 @@ class Gateway:
         payload data, and managing dictionaries related to file handling and data
         """
         self.append_history('%d/%d/%d, %d:%d:%d, %s - End data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        n_pck = (payload[1] << 8) | payload[2]
-        checkF_status = self.check_files(addr, n_pck)
-        if checkF_status != '':
-            self.append_history("\t" + checkF_status + "\n")
-            if "Anomalous closure" in checkF_status:
-                filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
-                self.file2s_dict_ftp[addr] = [filename]
-                with open(filename, 'w+') as f:
-                    f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+        date_time = self._get_current_datetime()
+
+        n_pck, checkF_status = self._handle_stream_continuity(payload, addr, date_time)
+
+        
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
@@ -507,8 +527,7 @@ class Gateway:
     # 1 - Traduce i dati e li scrive in un nuovo file.
     def process_shock_data(self, payload, addr):
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Shock data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+        date_time = self._get_current_datetime()
         filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + date_time + '_shock.log'
         
         recv_time = '{:x}'.format(payload[1]) + ':' + '{:x}'.format(payload[2]) + ':' + '{:x}'.format(payload[3])
@@ -655,124 +674,69 @@ class Gateway:
     # Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
     # I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
     def send_config(self, addr):
-        """
-        Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
-        I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
-        """
         status = 'Syncronization step not completed\n'
         t = datetime.now(timezone.utc)
-        
+
+        # Generazione Timestamp (a1)
         timestamp_str = 'a1%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), 
-            t.month, 
-            t.day, 
-            t.hour, 
-            t.minute, 
-            t.second, 
-            int(t.microsecond / 1000),
-            self.device_dict[addr]
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(t.microsecond / 1000), self.device_dict.get(addr, 0)
         )
         timestamp = bytes.fromhex(timestamp_str)
-        
+
         if addr in self.config_dict:
             param = self.config_dict[addr].split(' ')
 
-            if param[0] == '2g': acc = 0x01
-            elif param[0] == '4g': acc = 0x02
-            else: acc = 0x04
+            # --- SHM CONFIG (Param 0-5) ---
+            acc = self.RANGE_MAP.get(param[0], 0x04)
+            odr = self.ODR_MAP.get(param[1], 0x80)
+            ax = self.AXIS_MAP.get(param[2], 0x700)
+            datakb = self.DATAKB_MAP.get(param[3], 0x8000)
+            sending_f = self.SEND_TIME_MAP.get(param[4], 0x05)
+            sync_f = self.SYNC_MAP.get(param[5], 0x08)
 
-            if param[1] == '31_25Hz': odr = 0x08
-            elif param[1] == '62_5Hz': odr = 0x10
-            elif param[1] == '125Hz': odr = 0x20
-            elif param[1] == '250Hz': odr = 0x40
-            else: odr = 0x80
+            # --- SHOCK CONFIG (Param 6-9) ---
+            range_sck = self.RANGE_MAP.get(param[6], 0x04)
+            acq_sck_odr = self.ODR_MAP.get(param[7], 0x80)
+            sck_ax = self.AXIS_MAP.get(param[8], 0x700)
+            sck_datakb = self.DATAKB_MAP.get(param[9], 0x8000)
 
-            if param[2] == 'X': ax = 0x100
-            elif param[2] == 'Y': ax = 0x200
-            elif param[2] == 'Z': ax = 0x400
-            elif param[2] == 'XY': ax = 0x300
-            elif param[2] == 'XZ': ax = 0x500
-            elif param[2] == 'YZ': ax = 0x600
-            else: ax = 0x700
-
-            if param[3] == '2k': datakb = 0x800
-            elif param[3] == '4k': datakb = 0x1000
-            elif param[3] == '8k': datakb = 0x2000
-            elif param[3] == '16k': datakb = 0x4000
-            else: datakb = 0x8000
-
-            if param[4] == '1h': sending_f = 0x0
-            elif param[4] == '2h': sending_f = 0x01
-            elif param[4] == '3h': sending_f = 0x02
-            elif param[4] == '4h': sending_f = 0x03
-            elif param[4] == '6h': sending_f = 0x04
-            else: sending_f = 0x05
-
-            if param[5] == 'SYNC1': sync_f = 0x00
-            else: sync_f = 0x08
-
-            if param[6] == '2g': range_sck = 0x01
-            elif param[6] == '4g': range_sck = 0x02
-            else: range_sck = 0x04
-
-            if param[7] == '31_25Hz': acq_sck_odr = 0x08
-            elif param[7] == '62_5Hz': acq_sck_odr = 0x10
-            elif param[7] == '125Hz': acq_sck_odr = 0x20
-            elif param[7] == '250Hz': acq_sck_odr = 0x40
-            else: acq_sck_odr = 0x80
-
-            if param[8] == 'X': sck_ax = 0x100
-            elif param[8] == 'Y': sck_ax = 0x200
-            elif param[8] == 'Z': sck_ax = 0x400
-            elif param[8] == 'XY': sck_ax = 0x300
-            elif param[8] == 'XZ': sck_ax = 0x500
-            elif param[8] == 'YZ': sck_ax = 0x600
-            else: sck_ax = 0x700
-
-            if param[9] == '2k': sck_datakb = 0x800
-            elif param[9] == '4k': sck_datakb = 0x1000
-            elif param[9] == '8k': sck_datakb = 0x2000
-            elif param[9] == '16k': sck_datakb = 0x4000
-            else: sck_datakb = 0x8000
-
+            # --- NUMERICAL PARAMS (Param 10-12) con Clamping ---
             sck_t = int(param[10], 10)
+            thresh_acq = max(0x04B0, min(int(param[11], 10), 0x1F40))
+            sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
 
-            thresh_acq = int(param[11], 10)
-            if thresh_acq < 0x04B0: thresh_acq = 0x04B0
-            elif thresh_acq > 0x1F40: thresh_acq = 0x1F40
+            # --- TRIGGER HARDWARE (Param 13-16) ---
+            sck_g = self.RANGE_MAP.get(param[13], 0x04)
+            sck_freq = self.TRIG_FREQ_MAP.get(param[14], 0x80)
+            sck_bw = self.BW_MAP.get(param[15], 0x200)
+            sck_pw = self.PWR_MAP.get(param[16], 0x1000)
 
-            sample_activity = int(param[12], 10)
-            if sample_activity < 0x0001: sample_activity = 0x0001
-            elif sample_activity > 0x0010: sample_activity = 0x0010
-
-            if param[13] == '2g': sck_g = 0x01
-            elif param[13] == '4g': sck_g = 0x02
-            else: sck_g = 0x04
-
-            if param[14] == '12_5Hz': sck_freq = 0x08
-            elif param[14] == '25Hz': sck_freq = 0x10
-            elif param[14] == '50Hz': sck_freq = 0x20
-            elif param[14] == '100Hz': sck_freq = 0x40
-            else: sck_freq = 0x80
-
-            if param[15] == 'ODR2': sck_bw = 0x100
-            else: sck_bw = 0x200
-
-            if param[16] == 'N': sck_pw = 0x400
-            elif param[16] == 'L': sck_pw = 0x800
-            else: sck_pw = 0x1000
-
+            # Assemblaggio Registri Bitwise
             config_shm = acc | odr | ax | datakb
             send_frequency = sending_f | sync_f
             config_shm_sck = range_sck | acq_sck_odr | sck_ax | sck_datakb
             config_sck = sck_g | sck_freq | sck_bw | sck_pw
 
-            config_str = bytes.fromhex(timestamp_str.replace('a1', 'a2') + '%04x' % config_shm + '%02x' % send_frequency + '%04x' % config_shm_sck + '%04x' % config_sck + '%04x' % sck_t + '%04x' % thresh_acq + '%04x' % sample_activity)
-            self.device.send_data(self.remote_device, config_str) # Uilizzo l'oggetto remote_device e non la stringa
+            # Costruzione pacchetto di riconfigurazione (a2)
+            config_hex = (
+                timestamp_str.replace('a1', 'a2') + 
+                '%04x' % config_shm + 
+                '%02x' % send_frequency + 
+                '%04x' % config_shm_sck + 
+                '%04x' % config_sck + 
+                '%04x' % sck_t + 
+                '%04x' % thresh_acq + 
+                '%04x' % sample_activity
+            )
+
+            self.device.send_data(self.remote_device, bytes.fromhex(config_hex))
             status = 'Sent reconfiguration\n'
         else:
-            self.device.send_data(self.remote_device, timestamp) # Uilizzo l'oggetto remote_device e non la stringa
+            # Se il sensore non è in config.txt, manda solo il Sync (a1)
+            self.device.send_data(self.remote_device, timestamp)
             status = 'Sync sent\n'
+
         return status
 
     # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
