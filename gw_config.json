@@ -2,7 +2,7 @@
     "ftp": {
         "server": "ftp.wisepower.it",
         "user": "1451303@aruba.it",
-        "pwd": "QWEasz123",
+        "pwd": "QWEasz123*",
         "path": "www.wisepower.it/SHM_Files/Test_Ufficio"
     },
     "influxdb": {
