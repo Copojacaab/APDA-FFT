@@ -83,6 +83,7 @@ class Gateway:
         while True: 
             self.main()
 
+# HELPER FUNCTIONS
     def load_gateway_config(self):
         config_path = "/etc/config/scripts/gw_config.json"   
         
@@ -112,8 +113,49 @@ class Gateway:
             # in caso di errore fermo esecuzione 
             self.append_history(f"ERRORE CRITICO nel caricamento della configurazione: {e}")
             exit(1)
+
+    def _process_stream_data(self, payload_slice, addr, first_value=0, is_append=False):
+        """
+            Method to decode payload and write data to file
+
+            Args:
+                payload_slice: portion of the payload to decode (list)
+                addr: device address (string)
+                first_value: baseline value for offset
+                is_append: if True, append to existing file; if false write in a new file (default False)
+
+            Returns:
+                decoded_data: list of decoded float value as formatted strings
+
+            Raises:
+                errors are logged via append_history
+
+            Example:
+                #in process_mid_stream
+                acq_data = self._process_stream_data(payload[3:], addr, self.first_data_dict.get(addr, 0), is_append=True)
+        """
+        try:
+            # 1. decodifica
+            acq_data = self.decode_payload(payload_slice, first_value)
+            # 2. scrivo nel file(se esiste un file aperto per il dispositivo)
+            if addr in self.open_file_dict and os.path.exists(self.open_file_dict[addr]):
+                file_path = self.open_file_dict[addr]
+                mode = 'a' if is_append else 'w+'                       #append o scrivi nuovo
+
+                try:
+                    with open(file_path, mode) as f:
+                        for d in acq_data:
+                            f.write(d + ';')
+                except IOError as e:
+                    self.append_history(f"\t [ERROR] impossibile scrivere su file {file_path}: {str(e)}")
+                    return acq_data     #restituisci comunque i dati
+            else:
+                self.append_history(f"\t[WARN] tentativo di scrivere su file chiuso o inesistente per sensore {addr}")
             
-            
+            return acq_data
+        except Exception as e:
+            self.append_history(f"\t[ERROR] Errore in _process_data_stream per {addr}: {str(e)}")
+            return []
     def get_device(self):
         device = xbee.get_device()
         return device
@@ -309,7 +351,7 @@ class Gateway:
         else: sync = 'Unknown;\n'
 
         mean_val = self.decode_payload(payload[23:31], 0)
-        acq_data = self.decode_payload(payload[31:], self.first_data_dict[addr])
+        acq_data = self._process_stream_data(payload[31:], addr, self.first_data_dict[addr], is_append=False)
 
         filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + axis + '_' + date_time + '.log'
         self.open_file_dict[addr] = filename
@@ -333,18 +375,8 @@ class Gateway:
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
 
-        if addr in self.first_data_dict:
-            acq_data = self.decode_payload(payload[3:], self.first_data_dict[addr])
-        else:
-            acq_data = self.decode_payload(payload[3:], 0)
-
-        # PATCH: controlla che il file sia ancora aperto/valido prima di scrivere
-        if addr in self.open_file_dict and os.path.exists(self.open_file_dict[addr]):
-            with open(self.open_file_dict[addr], 'a') as f:
-                for d in acq_data:
-                    f.write(d + ';')
-        else:
-            self.append_history(f"\t[WARN] Tentativo di scrivere su file chiuso o inesistente per {addr}\n")
+        first_val = self.first_data_dict.get(addr, 0)
+        acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
     # Processa il contenuto del pacchetto 0xD3 (fine stream di dati).
     # 1 - Verifica che il numero del pacchetto sia quello aspettato, nel caso apre un nuovo file;
@@ -376,28 +408,19 @@ class Gateway:
                 self.file2s_dict[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
-    
-        if addr in self.first_data_dict:
-            acq_data = self.decode_payload(payload[3:], self.first_data_dict[addr])
-        else:
-            acq_data = self.decode_payload(payload[3:], 0)
+        first_val = self.first_data_dict.get(addr, 0)
+        acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
-        # PATCH: controlla che il file sia ancora aperto/valido prima di scrivere
-        if addr in self.open_file_dict and os.path.exists(self.open_file_dict[addr]):
-            with open(self.open_file_dict[addr], 'a') as f:
-                for d in acq_data:
-                    f.write(d + ';')
-        else:
-            self.append_history(f"\t[WARN] Tentativo di scrivere su file chiuso o inesistente per {addr}\n")
-        
-        
         """
         ==================================
         """
-        
-        full_path = self.open_file_dict[addr]
-        file2send = self.open_file_dict[addr].replace('/etc/config/scripts/SHM_Data/', '') if addr in self.open_file_dict else None
-        if file2send and full_path:
+        if addr in self.open_file_dict:
+            full_path = self.open_file_dict[addr]
+            file2send = full_path.replace('/etc/config/scripts/SHM_Data/', '') if addr in self.open_file_dict else None
+        else:
+            full_path = None
+            file2send = None
+            self.append_history(f"\t[WANR] Nessun file aperto per {addr}")
             if addr in self.file2s_dict:
                 self.file2s_dict[addr].append(file2send)
             else:
@@ -453,7 +476,7 @@ class Gateway:
 
         with open(filename, 'w+') as f:  
             f.write(recv_time + ";" + acc_range + acc_odr + acc_axis + sync + ";\n")      
-            acq_data = self.decode_payload(payload[11:], 0)
+            acq_data = self._process_stream_data(payload[11:], addr, first_value=0, is_append=False)
             for c in acq_data:
                 f.write(c + ';')
 
@@ -473,7 +496,7 @@ class Gateway:
         filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + date_time + '_shock.log'
         
         recv_time = '{:x}'.format(payload[1]) + ':' + '{:x}'.format(payload[2]) + ':' + '{:x}'.format(payload[3])
-        shock_data = self.decode_payload(payload[4:], 0)
+        shock_data = self._process_stream_data(payload[4:], addr, first_value=0, is_append=False)
         
         with open(filename, 'w+') as f:
             f.write(recv_time + ';')
@@ -610,11 +633,23 @@ class Gateway:
     # Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
     # I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
     def send_config(self, addr):
+        """
+        Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
+        I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
+        """
         status = 'Syncronization step not completed\n'
         t = datetime.now(timezone.utc)
         
-        #timestamp_str = 'a1%02d%02d%02d%02d%02d%02d%04x%02x' % (int(str(t.year)[-2:]), t.month, t.day, 11, 55, 0, int(t.microsecond / 1000),self.device_dict[addr])
-        timestamp_str = 'a1%02d%02d%02d%02d%02d%02d%04x%02x' % (int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, int(t.microsecond / 1000), self.device_dict[addr])
+        timestamp_str = 'a1%02d%02d%02d%02d%02d%02d%04x%02x' % (
+            int(str(t.year)[-2:]), 
+            t.month, 
+            t.day, 
+            t.hour, 
+            t.minute, 
+            t.second, 
+            int(t.microsecond / 1000),
+            self.device_dict[addr]
+        )
         timestamp = bytes.fromhex(timestamp_str)
         
         if addr in self.config_dict:
@@ -733,7 +768,7 @@ class Gateway:
                     self.file2s_dict[addr] = [file2send]
                 self.open_file_dict.pop(addr)
                 if addr in self.first_data_dict: self.first_data_dict.pop(addr)
-            elif n_pack > self.pack_num_dict[process_dataaddr] + 1:
+            elif n_pack > self.pack_num_dict[addr] + 1:
                 with open(self.open_file_dict[addr], 'a') as f:
                     status = '\tMissing packets from %d to %d - %s\n' % (self.pack_num_dict[addr] + 1, n_pack - 1, addr)
                     f.write('* MISSING PACKETS FROM %d TO %d *;' % (self.pack_num_dict[addr] + 1, n_pack - 1))
@@ -761,7 +796,9 @@ class Gateway:
             - log e pulizia
     """
     def send_file_to_influx(self, addr):
-        if addr in self.file2s_influx_dict and self.file2s_dict[addr]:
+        if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
+            if addr not in self.file2s_dict or not self.file2s_dict[addr]:
+                self.append_history(f"\t[WARN] Nessun file in file2s_dict per {addr}")
             # passo i dati della fft per i campi del db
             self.influx_handler.upload_influx_data(
                 addr=addr,
