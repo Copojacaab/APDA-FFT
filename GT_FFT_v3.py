@@ -33,60 +33,80 @@ from utils.influxdb_manager import InfluxHandler
 """
 
 class Gateway:
+    # --- COSTANTI DI CLASSE ---
+    RANGE_MAP = {'2g': 0x01, '4g': 0x02, '8g': 0x03}
+    ODR_MAP = {
+        '31_25Hz': 0x08, '62_5hz': 0x10, '125Hz': 0x20,
+        '250Hz': 0x40, '500Hz': 0x80
+    }
+    DATA_DIR =  '/etc/config/scripts/SHM_Data/'
+
     # Inizializzazione della classe Gateway().
-    def __init__(self):
+    def __init__(self, config_path = "/etc/config/scripts/gw_config.json"):
         
-        self.device_dict = dict()                               #chi e' online?
-        self.config_dict = dict()                               #config di per ogni device
-        self.file2s_dict_ftp = dict()                           #file da inviare al server
-        self.file2s_influx_dict = dict()                        #file da inviare a influx
+        # 1. dizionari di stato
+        self.device_dict = {}                               #chi e' online?
+        self.config_dict = {}                               #config di per ogni device
+        self.fft_dict = {}                                  #risultati FFT
 
-        self.open_file_dict = dict()                            #file aperti
-        self.pack_num_dict = dict()                             #numero pacchetto atteso
-        self.first_data_dict = dict()                           #baseline accellerometro
+        # 2. coda di invio
+        self.file2s_dict_ftp = {}                           #file da inviare al server
+        self.file2s_influx_dict = {}                        #file da inviare a influx
+
+        # 3. gestione stream e buffer
+        self.open_file_dict = {}                           #file aperti
+        self.pack_num_dict = {}                             #numero pacchetto atteso
+        self.first_data_dict = {}                           #baseline accellerometro
         
-        # Carico config FTP, influx e gw dal config
-        self.load_gateway_config()
+        # 4. variabilli di servizio
+        self.original_payload = None
+        self.delay = 0
+        self.delay_time = 0
+        self.t = datetime.now()
 
-        # ISTANZIO GESTORE FTP
+        # 5. caricamento config
+        self.load_gateway_config(config_path)
+
+        # 6. istanziazione handler
         self.ftp_handler = FTPClient(
             server=self.server_name,
             user=self.username,
             pwd=self.pwd,
             path=self.server_path,
-            local_dir='/etc/config/scripts/SHM_Data/'
+            local_dir = self.DATA_DIR
         )
         
-        # ISTANZIO GESTORE INFLUX
         self.influx_handler = InfluxHandler(
             url=self.influx_url,
             token=self.influx_token,
-            local_dir='/etc/config/scripts/SHM_Data/'
+            local_dir= self.DATA_DIR
         )
-        
-        self.RANGE_MAP = {'2g': 0x01, '4g': 0x02, '8g': 0x03}
-        self.ODR_MAP = {
-            '31_25Hz': 0x08, '62_5hz': 0x10, '125Hz': 0x20,
-            '250Hz': 0x40, '500Hz': 0x80
-        }
-        self.AXIS_MAP = {}
-        self.original_payload = ''
-        self.delay = 0
-        self.delay_time = 0
-        self.t = datetime.now()
-        self.address = ''
+
+        # 7. setup hardware (la connessione viene aperta in run())
         self.device = self.get_device()
 
-        self.fft_dict = dict()
+
+    def run(self):
+        """ Metodo per l'avvio operativo del gw """
+        try: 
+            self.device.open()
+            self.append_history(f"--- Gateway Start: {datetime.now()} ---\n\n")
+
+            # reset file sensori
+            with open(self.device_file, 'w+') as f:
+                pass
+
+            # LOOP principale di ascolto
+            while True:
+                self.main()
+
+        except Exception as e:
+            self.append_history(f"ERRORE CRITICO ESECUZIONE: {e}\n")
+        finally:
+            if self.device and self.device.is_open():
+                self.device.close()
         
-        self.device.open() # Apertura della connessione 
 
-        # cancella il file che gestisce i sensori
-        f = open(self.device_file, 'w+')
-        f.close()
-
-        while True: 
-            self.main()
 
 # HELPER FUNCTIONS
     def load_gateway_config(self):
@@ -364,7 +384,7 @@ class Gateway:
         mean_val = self.decode_payload(payload[23:31], 0)
 
         # crea file
-        filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + axis + '_' + date_time + '.log'
+        filename =  self.DATA_DIR + addr + '_' + axis + '_' + date_time + '.log'
         self.open_file_dict[addr] = filename
         self.pack_num_dict[addr] = 1
 
@@ -384,7 +404,7 @@ class Gateway:
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
-                filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
+                filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
@@ -418,7 +438,7 @@ class Gateway:
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
-                filename = '/etc/config/scripts/SHM_Data/' + addr + '_UnknownAxis_' + date_time + '.log'
+                filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
@@ -431,7 +451,7 @@ class Gateway:
 
         if addr in self.open_file_dict and self.open_file_dict[addr]:
             full_path = self.open_file_dict[addr]
-            file2send = full_path.replace('/etc/config/scripts/SHM_Data/', '') 
+            file2send = full_path.replace( self.DATA_DIR, '') 
 
             # aggiunge file valido alla coda
             if addr in self.file2s_dict_ftp:
@@ -463,7 +483,7 @@ class Gateway:
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Reduced data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
 
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + date_time + '_reduced.log'
+        filename =  self.DATA_DIR + addr + '_' + date_time + '_reduced.log'
 
         recv_time = '{:x}'.format(payload[3]) + ':' + '{:x}'.format(payload[4]) + ':' + '{:x}'.format(payload[5])
 
@@ -495,7 +515,7 @@ class Gateway:
             for c in acq_data:
                 f.write(c + ';')
 
-        file2send = filename.replace('/etc/config/scripts/SHM_Data/', '')
+        file2send = filename.replace( self.DATA_DIR, '')
         if file2send:  # <-- controllo aggiunto
             if addr in self.file2s_dict_ftp:
                 self.file2s_dict_ftp[addr].append(file2send)
@@ -508,7 +528,7 @@ class Gateway:
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Shock data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
         
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + date_time + '_shock.log'
+        filename =  self.DATA_DIR + addr + '_' + date_time + '_shock.log'
         
         recv_time = '{:x}'.format(payload[1]) + ':' + '{:x}'.format(payload[2]) + ':' + '{:x}'.format(payload[3])
         shock_data = self._process_stream_data(payload[4:], addr, first_value=0, is_append=False)
@@ -518,7 +538,7 @@ class Gateway:
             for c in shock_data:
                 f.write(c + ';')
 
-        file2send = filename.replace('/etc/config/scripts/SHM_Data/', '')
+        file2send = filename.replace( self.DATA_DIR, '')
         if file2send:  # <-- controllo aggiunto
             if addr in self.file2s_dict_ftp:
                 self.file2s_dict_ftp[addr].append(file2send)
@@ -782,7 +802,7 @@ class Gateway:
                 with open(self.open_file_dict[addr], 'a') as f:
                     status = '\tAnomalous closure for data stream - %s\n' % self.open_file_dict[addr]
                     f.write('* INCOMPLETE TRANSMISSION *;')
-                file2send = self.open_file_dict[addr].replace('/etc/config/scripts/SHM_Data/', '')
+                file2send = self.open_file_dict[addr].replace( self.DATA_DIR, '')
                 if addr in self.file2s_dict_ftp:
                     self.file2s_dict_ftp[addr].append(file2send)
                 else:
@@ -828,7 +848,7 @@ class Gateway:
             addr (str): Indirizzo dispositivo
             files_list (list): Lista di nomi file da cancellare
         """
-        base_path = '/etc/config/scripts/SHM_Data/'
+        base_path =  self.DATA_DIR
         for filename in files_list:
             full_path = base_path + filename
             try:
@@ -919,4 +939,5 @@ class Gateway:
 
 # Inizio del programma
 if __name__ == "__main__":
-    Gateway()
+    gw = Gateway()
+    gw.run()
