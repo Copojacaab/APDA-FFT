@@ -723,13 +723,13 @@ class Gateway:
 
             # 4. parametri numerici con
             sck_t = int(param[10], 10)
-            thresh_acq = max(0x4B0, min(int(param[11], 10)), 0x1F40)
+            thresh_acq = max(0x4B0, min(int(param[11], 10), 0x1F40))
             sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
 
             # 5. Configurazione fisica SCk
             sck_g = self.RANGE_MAP.get(param[13], 0x04)
             sck_freq = self.SCK_FREQ_MAP.get(param[14], 0x80)
-            sck_bw = self.SCK_BW_MAP.get(param[14], 0x200)
+            sck_bw = self.SCK_BW_MAP.get(param[15], 0x200)
             sck_pw = self.SCK_PW_MAP.get(param[15], 0x1000)
 
             # Calcolo maschere bitwise
