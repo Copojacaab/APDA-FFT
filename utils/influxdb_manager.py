@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from math import degrees, atan2, sqrt, acos
 
-from load_data import load_sensor
+from utils.load_data import load_sensor
 class InfluxHandler:
     def __init__(self, url, token, local_dir):
         self.url = url
@@ -52,6 +52,13 @@ class InfluxHandler:
             phi = degrees(atan2(m2, m1))
             theta = degrees(acos(m3 / accrms)) if accrms != 0 else 0
 
+            # Stringa base per InfluxDB (Line Protocol)
+            base_str = (
+                "WS_Test_Data,id={addr},axis={axis} "
+                "acc_range=\"{ar}\",temperature={temp},rms_x={rx},rms_y={ry},rms_z={rz},"
+                "phi={phi},theta={theta},issync={sync},peak_freq={pf},max_mag={mm},data={dat} {utime}"
+            )
+
             res = []
             for i, d in enumerate(samples):
                 # Calcolo il timestamp per ogni singolo campione basandomi sull'ODR
@@ -65,12 +72,7 @@ class InfluxHandler:
                     dat=d, utime=utime
                 ))
             
-            # Stringa base per InfluxDB (Line Protocol)
-            base_str = (
-                "WS_Test_Data,id={addr},axis={axis} "
-                "acc_range=\"{ar}\",temperature={temp},rms_x={rx},rms_y={ry},rms_z={rz},"
-                "phi={phi},theta={theta},issync={sync},peak_freq={pf},max_mag={mm},data={dat} {utime}"
-            )
+
 
             payload = '\n'.join(res)
             headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': f'Token {self.token}'}
@@ -81,6 +83,7 @@ class InfluxHandler:
                 if response.status == 204:
                     return f"OK: {filename}"
                 return f"Errore HTTP {response.status}"
+            
         except Exception as e:
             return f"Errore: {str(e)}"
         
