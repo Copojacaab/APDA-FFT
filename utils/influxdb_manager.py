@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from math import degrees, atan2, sqrt, acos
 
+from utils.load_data import load_sensor
 class InfluxHandler:
     def __init__(self, url, token, local_dir):
         self.url = url
@@ -26,32 +27,31 @@ class InfluxHandler:
         path = os.path.join(self.local_dir, filename) 
         
         try:
-            if not os.path.exists(path):
-                return f"File {filename} non trovato"
+            # Parser log del sensore
+            data = load_sensor(path)
+            if not data:
+                return f"Errore: file {filename} non valido o mancante"
             
-            with open(path, 'r') as f:
-                # Leggo l'header del file log del sensore
-                parameters = f.readline().split(";")[:-1]
-                type_of_sync = f.readline().strip().split(" ")[:-1]
-                mean_values = f.readline().split(";")[:-1]
-                f.readline() # Salto la riga "First values"
-                data = f.readline().split(";")[:-1]
-                data_float = [float(x) for x in data if x.strip()]
+            meta = data["metadata"]
+            summ = data["summary"]
+            samples = data["samples"]
+
+            # META
+            date_part = "_".join(filename.split("_")[2:5])
+            timestamp_base = datetime.strptime(date_part + ' ' + meta["timestamp"], '%d_%m_%Y %H:%M:%S')
+            odr_val = meta["fs"]
+            sync_bit = meta["is_synced"]
+
+            clean_axis = meta["axis"]
+            clean_range = meta["sensitivity"]
+
 
             # --- Calcoli Fisici (RMS e Angoli) ---
-            m1, m2, m3 = float(mean_values[1]), float(mean_values[2]), float(mean_values[3])
-            accrms = sqrt(pow(m1, 2) + pow(m2, 2) + pow(m3, 2))
+            m1, m2, m3 = summ["rms_x"], summ["rms_y"], summ["rms_z"]
+            accrms = sqrt(m1**2 + m2**2 + m3**2)
             phi = degrees(atan2(m2, m1))
             theta = degrees(acos(m3 / accrms)) if accrms != 0 else 0
-            
-            timestamp_base = datetime.strptime(date + ' ' + parameters[0], '%d_%m_%Y %H:%M:%S')
-            odr_val = float(parameters[2].replace(" Hz", ""))
-            sync_bit = "1.0" if type_of_sync and type_of_sync[0] == "Synced" else "0.0"
 
-            clean_axis = parameters[3].replace(" axis", "").replace(" ", "_")
-            clean_range = parameters[1].replace(" ", "")
-
-            res = []
             # Stringa base per InfluxDB (Line Protocol)
             base_str = (
                 "WS_Test_Data,id={addr},axis={axis} "
@@ -59,18 +59,21 @@ class InfluxHandler:
                 "phi={phi},theta={theta},issync={sync},peak_freq={pf},max_mag={mm},data={dat} {utime}"
             )
 
-            for i, d in enumerate(data_float):
+            res = []
+            for i, d in enumerate(samples):
                 # Calcolo il timestamp per ogni singolo campione basandomi sull'ODR
                 utime = int((time.mktime(timestamp_base.timetuple()) + i / odr_val) * 1000)
                 res.append(base_str.format(
                     addr=addr, axis=clean_axis, ar=clean_range,
-                    temp=mean_values[0], rx=m1, ry=m2, rz=m3,
+                    temp=summ["temperature"], rx=m1, ry=m2, rz=m3,
                     phi=phi, theta=theta, sync=sync_bit,
                     pf=fft_result.get('peak_freq', -1),
                     mm=fft_result.get('max_mag', -1),
                     dat=d, utime=utime
                 ))
             
+
+
             payload = '\n'.join(res)
             headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': f'Token {self.token}'}
             req = urllib.request.Request(self.url, data=payload.encode('utf-8'), headers=headers, method='POST')
@@ -80,5 +83,7 @@ class InfluxHandler:
                 if response.status == 204:
                     return f"OK: {filename}"
                 return f"Errore HTTP {response.status}"
+            
         except Exception as e:
             return f"Errore: {str(e)}"
+        

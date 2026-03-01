@@ -319,10 +319,10 @@ class Gateway:
             fft_dict = "Peaks: None or FFT not run\n"
         # --------------------------------------------
 
-        process_time_cpu = current_fft.get('process_time', -1)
-        wall_time_cpu = current_fft.get('wall_time', -1)
-        percentage_cpu = current_fft.get('percentage_cpu', -1)
-        peak_memrss = current_fft.get('memrss', -1)
+        process_time_cpu = self.fft_dict.get('process_time', -1)
+        wall_time_cpu = self.fft_dict.get('wall_time', -1)
+        percentage_cpu = self.fft_dict.get('percentage_cpu', -1)
+        peak_memrss = self.fft_dict.get('memrss', -1)
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 
@@ -349,8 +349,7 @@ class Gateway:
     # 3 - Traduce i primi dati accelerometrici contenuti nel payload e li scrive nel file.
     def process_start_stream(self, payload, addr):
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Start data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        date_time = self._get_current_datetime()
-
+        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
         checkF_status = self.check_files(addr, 1)
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
@@ -361,17 +360,33 @@ class Gateway:
         first_data_y = ctypes.c_int32(ctypes.c_uint32(payload[15] << 24 | payload[16] << 16 | payload[17] << 8 | payload[18]).value).value / 10000000.0
         first_data_z = ctypes.c_int32(ctypes.c_uint32(payload[19] << 24 | payload[20] << 16 | payload[21] << 8 | payload[22]).value).value / 10000000.0
 
-        # decodifica sensore
-        acc_range, acc_odr, axis, acc_axis, sync = self._decode_sensor_metadata(payload)
-        mean_val = self.decode_payload(payload[23:31], 0)
+        if payload[6] == 0x01: acc_range = '2g;'
+        elif payload[6] == 0x02: acc_range = '4g;'
+        elif payload[6] == 0x03: acc_range = '8g;'
+        else: acc_range = 'bad range value;'
 
-        if axis == 'Xaxis': 
+        if payload[7] == 0x07: acc_odr = '31.25 Hz;'
+        elif payload[7] == 0x06: acc_odr = '62.5 Hz;'
+        elif payload[7] == 0x05: acc_odr = '125 Hz;'
+        elif payload[7] == 0x04: acc_odr = '250 Hz;'
+        elif payload[7] == 0x03: acc_odr = '500 Hz;'
+        else: acc_odr = 'bad ODR value;'
+
+        if payload[8] == 0x01: 
+            axis = 'Xaxis'
+            acc_axis = 'X axis;\n'
             self.first_data_dict[addr] = first_data_x
-        elif axis == 'Yaxis': 
+        elif payload[8] == 0x02: 
+            axis = 'Yaxis'
+            acc_axis = 'Y axis;\n'
             self.first_data_dict[addr] = first_data_y
-        elif axis == 'Zaxis': 
+        elif payload[8] == 0x03: 
+            axis = 'Zaxis'
+            acc_axis = 'Z axis;\n'
             self.first_data_dict[addr] = first_data_z
         else: 
+            axis = 'UnknownAxis'
+            acc_axis = 'bad axis value;\n'
             self.first_data_dict[addr] = 0
 
         if payload[9] == 0: sync = 'Asynced;\n'
@@ -485,28 +500,27 @@ class Gateway:
 
         recv_time = '{:x}'.format(payload[3]) + ':' + '{:x}'.format(payload[4]) + ':' + '{:x}'.format(payload[5])
 
-        acc_range, acc_odr, axis, acc_axis, sync = self._decode_sensor_metadata(payload)
-        # if payload[6] == 0x01: acc_range = '2g;'
-        # elif payload[6] == 0x02: acc_range = '4g;'
-        # elif payload[6] == 0x03: acc_range = '8g;'
-        # else: acc_range = 'bad range value;'
+        if payload[6] == 0x01: acc_range = '2g;'
+        elif payload[6] == 0x02: acc_range = '4g;'
+        elif payload[6] == 0x03: acc_range = '8g;'
+        else: acc_range = 'bad range value;'
 
-        # if payload[7] == 0x07: acc_odr = '31.25 Hz;'
-        # elif payload[7] == 0x06: acc_odr = '62.5 Hz;'
-        # elif payload[7] == 0x05: acc_odr = '125 Hz;'
-        # elif payload[7] == 0x04: acc_odr = '250 Hz;'
-        # elif payload[7] == 0x03: acc_odr = '500Hz;'
-        # else: acc_odr = 'bad ODR value;'
+        if payload[7] == 0x07: acc_odr = '31.25 Hz;'
+        elif payload[7] == 0x06: acc_odr = '62.5 Hz;'
+        elif payload[7] == 0x05: acc_odr = '125 Hz;'
+        elif payload[7] == 0x04: acc_odr = '250 Hz;'
+        elif payload[7] == 0x03: acc_odr = '500Hz;'
+        else: acc_odr = 'bad ODR value;'
 
-        # if payload[8] == 0x01: acc_axis = 'X axis;\n'
-        # elif payload[8] == 0x02: acc_axis = 'Y axis;\n'
-        # elif payload[8] == 0x03: acc_axis = 'Z axis;\n'
-        # else: acc_axis = 'bad axis value;\n'
+        if payload[8] == 0x01: acc_axis = 'X axis;\n'
+        elif payload[8] == 0x02: acc_axis = 'Y axis;\n'
+        elif payload[8] == 0x03: acc_axis = 'Z axis;\n'
+        else: acc_axis = 'bad axis value;\n'
 
-        # if payload[9] == 0: sync = 'Asynced;\n'
-        # elif payload[9] == 1: sync = 'Synced;\n'
-        # elif payload[9] == 2: sync = 'Synced2;\n'
-        # else: sync = 'Unknown;\n'
+        if payload[9] == 0: sync = 'Asynced;\n'
+        elif payload[9] == 1: sync = 'Synced;\n'
+        elif payload[9] == 2: sync = 'Synced2;\n'
+        else: sync = 'Unknown;\n'
 
         with open(filename, 'w+') as f:  
             f.write(recv_time + ";" + acc_range + acc_odr + acc_axis + sync + ";\n")      
@@ -709,13 +723,13 @@ class Gateway:
 
             # 4. parametri numerici con
             sck_t = int(param[10], 10)
-            thresh_acq = max(0x4B0, min(int(param[11], 10)), 0x1F40)
+            thresh_acq = max(0x4B0, min(int(param[11], 10), 0x1F40))
             sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
 
             # 5. Configurazione fisica SCk
             sck_g = self.RANGE_MAP.get(param[13], 0x04)
             sck_freq = self.SCK_FREQ_MAP.get(param[14], 0x80)
-            sck_bw = self.SCK_BW_MAP.get(param[14], 0x200)
+            sck_bw = self.SCK_BW_MAP.get(param[15], 0x200)
             sck_pw = self.SCK_PW_MAP.get(param[15], 0x1000)
 
             # Calcolo maschere bitwise
@@ -735,7 +749,6 @@ class Gateway:
             # Invio semplicemnete pacchettodi sync 
             self.device.send_data(self.remote_device, bytes.fromhex('a1' + ts_part)) # Uilizzo l'oggetto remote_device e non la stringa
             status = 'Sync sent\n'
-
         return status
 
     # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
