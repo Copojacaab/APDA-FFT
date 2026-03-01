@@ -10,7 +10,6 @@ from digidevice import xbee
 from datetime import datetime, timezone
 import time
 import json
-import serial
 from math import degrees, atan2, sqrt, acos
 import urllib.request
 import urllib.error
