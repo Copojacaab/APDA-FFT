@@ -122,8 +122,7 @@ class Gateway:
 
 
 # HELPER FUNCTIONS
-    def load_gateway_config(self):
-        config_path = "/etc/config/scripts/gw_config.json"   
+    def load_gateway_config(self, config_path):   
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
         try:
