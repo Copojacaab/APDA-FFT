@@ -37,7 +37,7 @@ class Gateway:
     DATA_DIR =  '/etc/config/scripts/SHM_Data/'
 
     # Inizializzazione della classe Gateway().
-    def __init__(self, config_path = "/etc/config/scripts/gw_config.json"):
+    def __init__(self):
         
         # 1. dizionari di stato
         self.device_dict = {}                               #chi e' online?
@@ -60,7 +60,7 @@ class Gateway:
         self.t = datetime.now()
 
         # 5. caricamento config
-        self.load_gateway_config(config_path)
+        self.load_gateway_config()
 
         # 6. istanziazione handler
         self.ftp_handler = FTPClient(
@@ -104,8 +104,7 @@ class Gateway:
 
 
 # HELPER FUNCTIONS
-    def load_gateway_config(self):
-        config_path = "/etc/config/scripts/gw_config.json"   
+    def load_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"): 
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
         try:
@@ -367,7 +366,7 @@ class Gateway:
             f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};\n")
         
         # 4. Processamento effettivo dei campioni dati
-        self._process_stream_data(payload[31:], addr, first_value=0, is_append=False)
+        acq_data = self._process_stream_data(payload[31:], addr, first_value=0, is_append=False)
 
 
 
@@ -376,7 +375,7 @@ class Gateway:
     # 2 - Traduce i dati e li scrive nel file.
     def process_mid_stream(self, payload, addr):
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        n_pck = (payload[1] << 8) | payload[2]
+        n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
@@ -410,7 +409,7 @@ class Gateway:
         """
         self.append_history('%d/%d/%d, %d:%d:%d, %s - End data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        n_pck = (payload[1] << 8) | payload[2]
+        n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
@@ -457,73 +456,62 @@ class Gateway:
     # Processa il contenuto del pacchetto 0xD4 (dati ridotti).
     # 1 - Traduce i dati e li scrive in un nuovo file.
     def process_reduced_stream_data(self, payload, addr):
-        self.append_history('%d/%d/%d, %d:%d:%d, %s - Reduced data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
+        self.append_history(f'{self.t.strftime("%d/%m/%Y, %H:%M:%S")}, {addr} - Shock data transmission\n')
 
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        filename =  self.DATA_DIR + addr + '_' + date_time + '_reduced.log'
+        date_time = self.t.strftime("%d_%m_%Y_%H_%M_%S")
+        filename =  f"{self.DATA_DIR}{addr}_{date_time}_reduced.log"
 
-        recv_time = '{:x}'.format(payload[3]) + ':' + '{:x}'.format(payload[4]) + ':' + '{:x}'.format(payload[5])
+        # 0. Parsing header
+        header = ProtocolDecoder.parse_reduced_header(payload)
 
-        if payload[6] == 0x01: acc_range = '2g;'
-        elif payload[6] == 0x02: acc_range = '4g;'
-        elif payload[6] == 0x03: acc_range = '8g;'
-        else: acc_range = 'bad range value;'
+        # 1. Scrittura header
+        with open(filename, 'w+') as f:
+            f.write(f"{header['time']};{header['range']};{header['odr']};{header['axis_file']};\n")
+            f.writelines(f"{header['sync']};\n")
+        
+        # 2. Scrittura dati
+        self._process_stream_data(payload[11:], addr, first_value=0, is_append=True)
 
-        if payload[7] == 0x07: acc_odr = '31.25 Hz;'
-        elif payload[7] == 0x06: acc_odr = '62.5 Hz;'
-        elif payload[7] == 0x05: acc_odr = '125 Hz;'
-        elif payload[7] == 0x04: acc_odr = '250 Hz;'
-        elif payload[7] == 0x03: acc_odr = '500Hz;'
-        else: acc_odr = 'bad ODR value;'
-
-        if payload[8] == 0x01: acc_axis = 'X axis;\n'
-        elif payload[8] == 0x02: acc_axis = 'Y axis;\n'
-        elif payload[8] == 0x03: acc_axis = 'Z axis;\n'
-        else: acc_axis = 'bad axis value;\n'
-
-        if payload[9] == 0: sync = 'Asynced;\n'
-        elif payload[9] == 1: sync = 'Synced;\n'
-        elif payload[9] == 2: sync = 'Synced2;\n'
-        else: sync = 'Unknown;\n'
-
-        with open(filename, 'w+') as f:  
-            f.write(recv_time + ";" + acc_range + acc_odr + acc_axis + sync + ";\n")      
-            acq_data = self._process_stream_data(payload[11:], addr, first_value=0, is_append=False)
-            for c in acq_data:
-                f.write(c + ';')
-
-        file2send = filename.replace( self.DATA_DIR, '')
-        if file2send:  # <-- controllo aggiunto
-            if addr in self.file2s_dict_ftp:
-                self.file2s_dict_ftp[addr].append(file2send)
-            else:
-                self.file2s_dict_ftp[addr] = [file2send]
+        # 3. Cleanup: rimuovo dalla gestione stream il file perche' e' autoconclusivo
+        self.open_file_dict.pop(addr, None)
+        self.file2s_dict_ftp.setdefault(addr, []).append(filename.replace(self.DATA_DIR, ''))       #?????????
 
     # Processa il contenuto del pacchetto 0xC1 (evento vibrazinale).
     # 1 - Traduce i dati e li scrive in un nuovo file.
     def process_shock_data(self, payload, addr):
-        self.append_history('%d/%d/%d, %d:%d:%d, %s - Shock data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
+        self.append_history(f"{self.t.strftime('%d/%m/%Y, %H:%M:%S')}, {addr} - Shock data transmission\n")
         
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
-        filename =  self.DATA_DIR + addr + '_' + date_time + '_shock.log'
+        # 0 Parsing header
+        header = ProtocolDecoder.parse_shock_header(payload)
+
+        date_time = self.t.strftime('%d_%m_%Y_%H_%M_%S')
+        filename =  f"{self.DATA_DIR}{addr}_{date_time}_shock.log"
         
-        recv_time = '{:x}'.format(payload[1]) + ':' + '{:x}'.format(payload[2]) + ':' + '{:x}'.format(payload[3])
-        shock_data = self._process_stream_data(payload[4:], addr, first_value=0, is_append=False)
-        
+        self.open_file_dict[addr] = filename
+        # 1. Scrittura header
         with open(filename, 'w+') as f:
-            f.write(recv_time + ';')
-            for c in shock_data:
-                f.write(c + ';')
+            f.write(header["time"] + ';')
 
-        file2send = filename.replace( self.DATA_DIR, '')
-        if file2send:  # <-- controllo aggiunto
-            if addr in self.file2s_dict_ftp:
-                self.file2s_dict_ftp[addr].append(file2send)
-            else:
-                self.file2s_dict_ftp[addr] = [file2send]
+        # 2. Decoding e scrittura su file
+        self._process_stream_data(payload[4:], addr, first_value=0, is_append=True)
 
+        # 3. Invio immediato al server per dati di shock
         server_status = self.send_file_to_server(addr)
         self.append_history("\t" + server_status + "\n")
+
+        # 2. Scrittura su file
+        # with open(filename, 'w+') as f:
+        #     f.write(header["time"] + ';')
+        #     shock_data = ProtocolDecoder.decode_samples(payload[4:], 0)
+        #     for c in shock_data:
+        #         f.write(c + ';')
+
+        # file2send = filename.replace( self.DATA_DIR, '')
+        # if file2send:  
+        #     if addr in self.file2s_dict_ftp:
+        #         self.file2s_dict_ftp[addr].append(file2send)
+        #     else:
+        #         self.file2s_dict_ftp[addr] = [file2send]
 
     # Processa il contenuto del pacchetto.
     def process_unknown_data(self, payload, addr):
@@ -641,64 +629,20 @@ class Gateway:
         Costruisce e trasmette il pacchetto di sincronizzazione(0xA1 o 0xA2) al sensore che ne ha fatto richiesta.
         I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
         """
-
-        status = 'Syncronization step not completed\n'
-        t = datetime.now(timezone.utc)
-        
-        ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
-            int(t.microsecond / 1000), self.device_dict.get(addr, 0)
-        )
+        delay = self.device_dict.get(addr, 0)
         
         if addr in self.config_dict:
-            param = self.config_dict[addr].split(' ')
-            if len(param) < 17:
-                return "Error: Config parameters insufficient\n"
-            
-            # 1. Recupero valori SHM tramite lookup table
-            acc = ProtocolDecoder.RANGE_MAP.get(param[0], 0x04)
-            odr = ProtocolDecoder.ODR_MAP.get(param[1], 0x80)
-            ax = ProtocolDecoder.AXIS_MAP.get(param[2], 0x700)
-            datakb = ProtocolDecoder.DATAKB_MAP.get(param[3], 0x8000)
-
-            # 2. Recuper frequenze di invio e sync
-            sending_f = ProtocolDecoder.SEND_FREQ_MAP.get(param[4], 0x05)
-            sync_f = ProtocolDecoder.SYNC_TYPE_MAP.get(param[5], 0x08)
-
-            # 3. Configurazione SCK (shock)
-            range_sck = ProtocolDecoder.RANGE_MAP.get(param[6], 0x04)
-            acq_sck_odr = ProtocolDecoder.ODR_MAP.get(param[7], 0x80)
-            sck_ax = ProtocolDecoder.AXIS_MAP.get(param[8], 0x7000)
-            sck_datakb = ProtocolDecoder.DATAKB_MAP.get(param[9], 0x8000)
-
-            # 4. parametri numerici con
-            sck_t = int(param[10], 10)
-            thresh_acq = max(0x4B0, min(int(param[11], 10), 0x1F40))
-            sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
-
-            # 5. Configurazione fisica SCk
-            sck_g = ProtocolDecoder.RANGE_MAP.get(param[13], 0x04)
-            sck_freq = ProtocolDecoder.SCK_FREQ_MAP.get(param[14], 0x80)
-            sck_bw = ProtocolDecoder.SCK_BW_MAP.get(param[15], 0x200)
-            sck_pw = ProtocolDecoder.SCK_PW_MAP.get(param[16], 0x1000)
-
-            # Calcolo maschere bitwise
-            config_shm = acc | odr | ax | datakb
-            send_frequency = sending_f | sync_f
-            config_shm_sck = range_sck | acq_sck_odr | sck_ax | sck_datakb
-            config_sck = sck_g | sck_freq | sck_bw | sck_pw
-
-            # config_str = bytes.fromhex(timestamp_str.replace('a1', 'a2') + '%04x' % config_shm + '%02x' % send_frequency + '%04x' % config_shm_sck + '%04x' % config_sck + '%04x' % sck_t + '%04x' % thresh_acq + '%04x' % sample_activity)
-            config_hex = 'a2' + ts_part + '%04x%02x%04x%04x%04x%04x%04x' % (
-                config_shm, send_frequency, config_shm_sck, 
-                config_sck, sck_t, thresh_acq, sample_activity
-            )
-            self.device.send_data(self.remote_device, bytes.fromhex(config_hex)) # Uilizzo l'oggetto remote_device e non la stringa
+            # Se gia presente => genera pacchetto riconfig (0xA2)
+            config_hex = ProtocolDecoder.build_config_packet(self.config_dict[addr], delay)
             status = 'Sent reconfiguration\n'
         else:
             # Invio semplicemnete pacchettodi sync 
-            self.device.send_data(self.remote_device, bytes.fromhex('a1' + ts_part)) # Uilizzo l'oggetto remote_device e non la stringa
+            # Altrimenti => genera pacchetto Sync (0xA1)
+            config_hex = ProtocolDecoder.build_sync_packet(delay)
             status = 'Sync sent\n'
+        
+        # mandManda la configurazione al sensore
+        self.device.send_data(self.remote_device, bytes.fromhex(config_hex))
         return status
 
     # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
