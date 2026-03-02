@@ -638,7 +638,7 @@ class Gateway:
     # I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
     def send_config(self, addr):
         """
-        Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
+        Costruisce e trasmette il pacchetto di sincronizzazione(0xA1 o 0xA2) al sensore che ne ha fatto richiesta.
         I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
         """
 
@@ -656,20 +656,20 @@ class Gateway:
                 return "Error: Config parameters insufficient\n"
             
             # 1. Recupero valori SHM tramite lookup table
-            acc = self.RANGE_MAP.get(param[0], 0x04)
-            odr = self.ODR_MAP.get(param[1], 0x80)
-            ax = self.AXIS_MAP.get(param[2], 0x700)
-            datakb = self.DATAKB_MAP.get(param[3], 0x8000)
+            acc = ProtocolDecoder.RANGE_MAP.get(param[0], 0x04)
+            odr = ProtocolDecoder.ODR_MAP.get(param[1], 0x80)
+            ax = ProtocolDecoder.AXIS_MAP.get(param[2], 0x700)
+            datakb = ProtocolDecoder.DATAKB_MAP.get(param[3], 0x8000)
 
             # 2. Recuper frequenze di invio e sync
-            sending_f = self.SEND_FREQ_MAP.get(param[4], 0x05)
-            sync_f = self.SYNC_TYPE_MAP.get(param[5], 0x08)
+            sending_f = ProtocolDecoder.SEND_FREQ_MAP.get(param[4], 0x05)
+            sync_f = ProtocolDecoder.SYNC_TYPE_MAP.get(param[5], 0x08)
 
             # 3. Configurazione SCK (shock)
-            range_sck = self.RANGE_MAP.get(param[6], 0x04)
-            acq_sck_odr = self.ODR_MAP.get(param[7], 0x80)
-            sck_ax = self.AXIS_MAP.get(param[8], 0x7000)
-            sck_datakb = self.DATAKB_MAP.get(param[9], 0x8000)
+            range_sck = ProtocolDecoder.RANGE_MAP.get(param[6], 0x04)
+            acq_sck_odr = ProtocolDecoder.ODR_MAP.get(param[7], 0x80)
+            sck_ax = ProtocolDecoder.AXIS_MAP.get(param[8], 0x7000)
+            sck_datakb = ProtocolDecoder.DATAKB_MAP.get(param[9], 0x8000)
 
             # 4. parametri numerici con
             sck_t = int(param[10], 10)
@@ -677,10 +677,10 @@ class Gateway:
             sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
 
             # 5. Configurazione fisica SCk
-            sck_g = self.RANGE_MAP.get(param[13], 0x04)
-            sck_freq = self.SCK_FREQ_MAP.get(param[14], 0x80)
-            sck_bw = self.SCK_BW_MAP.get(param[15], 0x200)
-            sck_pw = self.SCK_PW_MAP.get(param[15], 0x1000)
+            sck_g = ProtocolDecoder.RANGE_MAP.get(param[13], 0x04)
+            sck_freq = ProtocolDecoder.SCK_FREQ_MAP.get(param[14], 0x80)
+            sck_bw = ProtocolDecoder.SCK_BW_MAP.get(param[15], 0x200)
+            sck_pw = ProtocolDecoder.SCK_PW_MAP.get(param[16], 0x1000)
 
             # Calcolo maschere bitwise
             config_shm = acc | odr | ax | datakb
