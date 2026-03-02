@@ -405,7 +405,7 @@ class Gateway:
             self.first_data_dict[addr] = first_data_z
         else: 
             self.first_data_dict[addr] = 0
-            
+
         # crea file
         filename = '/etc/config/scripts/SHM_Data/' + addr + '_' + axis + '_' + date_time + '.log'
         self.open_file_dict[addr] = filename
@@ -641,6 +641,7 @@ class Gateway:
                 res_fft = start_fft(samples, fs)                            # risultati fft
             else:
                 print(f"\t[WARNING] Nessun campione nel file per FFT")
+                return
 
             if self.is_flexibile_structure:
                 peaks = get_top_peaks_prominence(res_fft, fs)
@@ -810,9 +811,9 @@ class Gateway:
         if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
             try:
                 self.influx_handler.upload_influx_data(
-                    addr=addr,
+                    addr = addr,
                     files_to_send=self.file2s_influx_dict[addr],
-                    fft_dict=self.fft_dict,
+                    fft_result=self.fft_dict.get(addr, {}),
                     logger_callback=self.append_history
                 )
                 
