@@ -1,18 +1,25 @@
 import ctypes
+from datetime import datetime, timezone
 
+# Mappe per LETTURA (parsing package in ingresso)
+rl = {0x01: '2g', 0x02: '4g', 0x03: '8g'}
+ol = {0x07: '31.25 Hz', 0x06: '62.5 Hz', 0x05: '125 Hz', 0x04: '250 Hz', 0x03: '500 Hz'}
+al = {0x01: ('Xaxis', 'X axis'), 0x02: ('Yaxis', 'Y axis'), 0x03: ('Zaxis', 'Z axis')}
+sl = {0: 'Asynced', 1: 'Synced', 2: 'Synced2'}
 class ProtocolDecoder:
     """
     Responsabile per la traduzione dal binario dei sensori a 
     un dizionario leggibile in python.
     """
-    RANGE_MAP = {'2g': 0x01, '4g': 0x02, '8g': 0x03}
+    # Mapper pe la SCRITTURA (build pacchetti 0xA2)
+    RANGE_MAP = {'2g': 0x01, '4g': 0x02, '8g': 0x04}
     ODR_MAP = {
-        '31_25Hz': 0x08, '62_5hz': 0x10, '125Hz': 0x20,
+        '31_25Hz': 0x08, '62_5Hz': 0x10, '125Hz': 0x20,
         '250Hz': 0x40, '500Hz': 0x80
     }
     AXIS_MAP = {
         'X': 0x100, 'Y': 0x200, 'Z': 0x400,
-        'XY': 0x300, 'XZ': 0x500, 'XYZ': 0x600
+        'XY': 0x300, 'XZ': 0x500, 'YZ': 0x600
     }
     DATAKB_MAP = {'2k': 0x800, '4k': 0x1000, '8k': 0x2000, '16k': 0x4000}
     SEND_FREQ_MAP = {'1h': 0x0, '2h': 0x01, '3h': 0x02, '4h': 0x03, '6h': 0x04}
@@ -20,6 +27,84 @@ class ProtocolDecoder:
     SCK_FREQ_MAP = {'12_5Hz': 0x08, '25Hz': 0x10, '50Hz': 0x20, '100Hz': 0x40}
     SCK_BW_MAP = {'ODR2': 0x100}
     SCK_PW_MAP = {'N': 0x400, 'L': 0x800}
+
+
+
+
+    @staticmethod
+    def build_sync_packet(delay):
+        """
+            Genera il pacchetto base di sincronizzazione (0xA1)
+        """
+        t = datetime.now(timezone.utc)
+
+        # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
+        ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(t.microsecond / 1000), delay
+        )
+        return 'a1' + ts_part
+
+    @staticmethod
+    def build_config_packet(config_str, delay):
+        """ 
+            Genera il pacchetto di riconfigurazione (0xA2)
+            Prende la stringa di configurazione dal config.txt 
+        """
+        t = datetime.now(timezone.utc)
+
+        # 0. Parte comune di timestamp e sync
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
+        ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
+            int(t.microsecond / 1000), delay
+        )
+
+        param = config_str.split(' ')
+        if len(param) < 17:                     #fallback a sync se parametri insufficienti
+            return 'a1' + ts_part
+        
+        # 1. Recupero valori 
+
+        # Configurazione SHM
+        acc = ProtocolDecoder.RANGE_MAP.get(param[0], 0x04)
+        odr = ProtocolDecoder.ODR_MAP.get(param[1], 0x80)
+        ax = ProtocolDecoder.AXIS_MAP.get(param[2], 0x700)
+        datakb = ProtocolDecoder.DATAKB_MAP.get(param[3], 0x8000)
+        # Frequenze
+        sending_f = ProtocolDecoder.SEND_FREQ_MAP.get(param[4], 0x05)
+        sync_f = ProtocolDecoder.SYNC_TYPE_MAP.get(param[5], 0x08)
+        # Configurazione SHM per shock
+        range_sck = ProtocolDecoder.RANGE_MAP.get(param[6], 0x04)
+        acq_sck_odr = ProtocolDecoder.ODR_MAP.get(param[7], 0x80)
+        sck_ax = ProtocolDecoder.AXIS_MAP.get(param[8], 0x700)
+        sck_datakb = ProtocolDecoder.DATAKB_MAP.get(param[9], 0x8000)
+        # Parametri numerici
+        sck_t = int(param[10], 10)
+        thresh_acq = max(0x4B0, min(int(param[11], 10), 0x1F40))
+        sample_activity = max(0x0001, min(int(param[12], 10), 0x0010))
+        # Configurazione HW schock
+        sck_g = ProtocolDecoder.RANGE_MAP.get(param[13], 0x04)
+        sck_freq = ProtocolDecoder.SCK_FREQ_MAP.get(param[14], 0x80)
+        sck_bw = ProtocolDecoder.SCK_BW_MAP.get(param[15], 0x200)
+        sck_pw = ProtocolDecoder.SCK_PW_MAP.get(param[16], 0x1000)
+        # Costruzione maschere bitwise
+        config_shm = acc | odr | ax | datakb
+        send_frequency = sending_f | sync_f
+        config_shm_sck = range_sck | acq_sck_odr | sck_ax | sck_datakb
+        config_sck = sck_g | sck_freq | sck_bw | sck_pw
+
+        # 2. Formattazione stringa HEX 
+        # Formato: a2 + ts + shm(2b) + freq(1b) + shm_sck(2b) + sck_t(2b) + tresh(2b) + act(2b)
+        config_hex = 'a2' + ts_part + '%04x%02x%04x%04x%04x%04x%04x' % (
+            config_shm, send_frequency, config_shm_sck, 
+            config_sck, sck_t, thresh_acq, sample_activity
+        )
+
+        return config_hex
 
     @staticmethod
     def decode_float_v2(high_byte, low_byte):
@@ -61,10 +146,6 @@ class ProtocolDecoder:
 
     @staticmethod
     def parse_start_header(p):
-        rl = {0x01: '2g', 0x02: '4g', 0x03: '8g'}
-        ol = {0x07: '31.25 Hz', 0x06: '62.5 Hz', 0x05: '125 Hz', 0x04: '250 Hz', 0x03: '500 Hz'}
-        al = {0x01: ('Xaxis', 'X axis'), 0x02: ('Yaxis', 'Y axis'), 0x03: ('Zaxis', 'Z axis')}
-        sl = {0: 'Asynced', 1: 'Synced', 2: 'Synced2'}
         
         fx = ctypes.c_int32(ctypes.c_uint32(p[11]<<24|p[12]<<16|p[13]<<8|p[14]).value).value / 10000000.0
         fy = ctypes.c_int32(ctypes.c_uint32(p[15]<<24|p[16]<<16|p[17]<<8|p[18]).value).value / 10000000.0
@@ -76,30 +157,28 @@ class ProtocolDecoder:
             "odr": ol.get(p[7], "bad ODR"), "axis_label": axis_info[0], "axis_file": axis_info[1],
             "sync": sl.get(p[9], "Unknown"), "baselines": (fx, fy, fz)
         }
-
-def test_float_parity():
-    # Coppiette di byte (High, Low) e risultato atteso (se noto)
-    test_cases = [
-        ([0x3C, 0x00], 1.0),      # Esempio: valore unitario
-        ([0xBC, 0x00], -1.0),     # Esempio: valore unitario negativo
-        ([0x42, 0x00], 4.0),      # Esponente positivo
-        ([0x00, 0x00], 0.0),      # Zero
-        ([0x7C, 0x00], float('inf')) # Infinito
-    ]
     
-    print(f"{'Hex':<10} | {'Vecchia':<10} | {'Nuova':<10} | {'Esito'}")
-    print("-" * 50)
-    
-    for bytes_in, expected in test_cases:
-        # Vecchia logica (estratta dal file originale)
-        hex_char = (bytes_in[0] << 8) | bytes_in[1]
-        old_val = pow(2, ((hex_char & 0x7C00) >> 10) - 15) * (1.0 + (hex_char & 0x03FF) / 1000.0)
-        if hex_char & 0x8000: old_val *= -1
-        
-        # Nuova logica
-        new_val = ProtocolDecoder.decode_float_v2(bytes_in[0], bytes_in[1])
-        
-        match = "OK" if str(old_val) == str(new_val) else "ERRORE"
-        print(f"{bytes_in[0]:02x}{bytes_in[1]:02x}     | {old_val:<10.4f} | {new_val:<10.4f} | {match}")
+    @staticmethod
+    def parse_reduced_header(p):
+        """Parsa l'header del pacchetto 0xD4 (dati ridotti)"""
 
-test_float_parity()
+        axis_info = al.get(p[8], ('UnknownAxis', 'bad axis value'))
+        return {
+            "time": f"{p[3]:x}:{p[4]:x}:{p[5]:x}",
+            "range": rl.get(p[6], "bad range"),
+            "odr": ol.get(p[7], "bad ODR"),
+            "axis_file": axis_info[1],
+            "sync": sl.get(p[9], "Unknown")
+        }
+    
+    @staticmethod
+    def parse_shock_header(p):
+        "Parsa l'header del pachetto 0xC1 (evento shock)"
+        return {
+            "time": f"{p[1]:x}:{p[2]:x}:{p[3]:x}"
+        }
+    
+    @staticmethod
+    def get_packet_number(p):
+        return (p[1] << 8) | p[2]
+        
