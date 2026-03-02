@@ -302,10 +302,10 @@ class Gateway:
             fft_dict = "Peaks: None or FFT not run\n"
         # --------------------------------------------
 
-        process_time_cpu = self.fft_dict.get('process_time', -1)
-        wall_time_cpu = self.fft_dict.get('wall_time', -1)
-        percentage_cpu = self.fft_dict.get('percentage_cpu', -1)
-        peak_memrss = self.fft_dict.get('memrss', -1)
+        process_time_cpu = current_fft.get('process_time', -1)
+        wall_time_cpu = current_fft.get('wall_time', -1)
+        percentage_cpu = current_fft.get('percentage_cpu', -1)
+        peak_memrss = current_fft.get('memrss', -1)
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 
@@ -366,7 +366,7 @@ class Gateway:
             f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};\n")
         
         # 4. Processamento effettivo dei campioni dati
-        acq_data = self._process_stream_data(payload[31:], addr, first_value=0, is_append=False)
+        acq_data = self._process_stream_data(payload[31:], addr, first_value=0, is_append=True)
 
 
 

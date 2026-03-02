@@ -66,8 +66,6 @@ class ProtocolDecoder:
         param = config_str.split(' ')
         if len(param) < 17:                     #fallback a sync se parametri insufficienti
             return 'a1' + ts_part
-        
-        # 1. Recupero valori 
 
         # Configurazione SHM
         acc = ProtocolDecoder.RANGE_MAP.get(param[0], 0x04)
