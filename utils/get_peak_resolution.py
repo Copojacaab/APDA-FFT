@@ -52,14 +52,15 @@ def get_top_peaks_resolution(fft_res, fs, k=5):
                 if magnitudes[j] > max_val and magnitudes[j] > threshold:
                     max_val = magnitudes[j]
                     max_idx = j
-            
+
+        freq = max_idx * (fs/n)
+        
         if max_idx != -1:
             # Controllo se il nuovo picco è abbastanza lontano da quelli già salvati
             is_separated = all(resolution(magnitudes, p["idx"], max_idx) >= 1.5
                             for p in peaks)
             
             if is_separated:
-                freq = max_idx * (fs/n)
                 peaks.append({"freq": freq, "mag": max_val, "idx": max_idx})
             
             # "Azzero" la zona intorno al picco trovato per cercare il prossimo
