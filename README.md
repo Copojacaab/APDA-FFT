@@ -4,29 +4,33 @@ Adaptive Peak Detection for FFT-based Structural Monitoring
 ## Configurazione e Deploy
 Il sistema e' progettato per essere eseguito su un gateway Digi IX15 con sistema di comunicazione Xbee integrato.
 
-### Prerequisiti 
-- python 3.xODR
-- modulo hw xbee interfaccia e accessibile
+### Prerequisiti
+* Python 3.x
+* Modulo HW XBee interfacciato e accessibile
+* Libreria `digidevice` per l'interazione con l'hw
+
 
 ### Struttura delle Directory
 Il software si aspetta una struttura specifica dell'ambiente di lavoro, che di default punta alla directory `/etc/config/scripts`:
 
 ```
     /etc/config/scripts/
-    ├── gw_config.json         # File di configurazione principale
-    ├── config.txt             # Configurazioni hardware per i singoli sensori
-    ├── SHM_Data/              # Cartella di lavoro per l'I/O dei dati
-    │   ├── history.log        # Log delle operazioni di sistema
-    │   └── devices.txt        # Anagrafica e delay dei dispositivi connessi
-    ├── GT_FFT_v2.py           # Core Application
-    ├── metrics/
-    │   └── fft_iterativa.py
-    └── utils/
-        ├── load_data.py
-        ├── get_peak_prominence.py
-        ├── get_peak_resolution.py
-        ├── ftp_manager.py
-        └── influxdb_manager.py
+    |-- gw_config.json          # File di configurazione principale
+    |-- config.txt              # Configurazioni hardware per i singoli sensori
+    |-- SHM_Data/               # Cartella di lavoro per l'I/O dei dati
+    │   |-- history.log         # Log delle operazioni di sistema
+    │   |-- devices.txt         # Anagrafica e delay dei dispositivi connessi
+    |-- GT_FFT_v5.py            # Core Application Orchestrator
+    |-- protocol_radio.py       # Gestore della connessione fisica e logica XBee
+    |-- protocol_decoder.py     # Traduttore pacchetti esadecimali
+    |-- metrics/
+    │   |-- fft_iterativa.py    # algoritmo FFT Radix-2
+    |-- utils/
+        |-- load_data.py
+        |-- get_peak_prominence.py
+        |-- get_peak_resolution.py
+        |-- ftp_manager.py
+        |-- influxdb_manager.py
 ```
 
 ### Configurazione di sistema

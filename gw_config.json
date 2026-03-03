@@ -9,7 +9,7 @@
         "url": "http://192.168.1.52:8086/api/v2/write?org=4853047a5696ea95&bucket=test&precision=ms",
         "token": "6p1PobT2__TBA5SU9mPBud3B_fxrrv1Ysi7BO2CdsQNVnlQ2dhtlvjS_cCUXtDgUQrpMigMq0VEqp76obQ4oLQ==",
         "org": "4853047a5696ea95",
-        "bucket": "test"
+        "bucket": "FFT_and_Data"
     },
     "gateway": {
         "logger_file": "/etc/config/scripts/SHM_Data/history.log",

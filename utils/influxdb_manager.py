@@ -71,19 +71,17 @@ class InfluxHandler:
                     mm=fft_result.get('max_mag', -1),
                     dat=d, utime=utime
                 ))
-            
 
 
             payload = '\n'.join(res)
             headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': f'Token {self.token}'}
             req = urllib.request.Request(self.url, data=payload.encode('utf-8'), headers=headers, method='POST')
-            
+
             # Spedizione POST a Influx
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=20) as response:
                 if response.status == 204:
                     return f"OK: {filename}"
                 return f"Errore HTTP {response.status}"
-            
+
         except Exception as e:
             return f"Errore: {str(e)}"
-        
