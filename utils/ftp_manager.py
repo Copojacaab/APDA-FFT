@@ -13,7 +13,7 @@ class FTPClient:
         # Spedisce la lista di file al server e pulisce la cartella locale
         
         try: 
-            logger_callback(f"\t [FTP] Tentativo di connessione a {self.server}...")
+            logger_callback(f"\t [FTP] Tentativo di connessione a {self.server}...\n")
             if not files_to_send:
                 return ""
             
@@ -30,14 +30,14 @@ class FTPClient:
                     filename = files_to_send[0]
                     
                     if not filename:
-                        logger_callback(f"\t[FTP] Nome file vuoto per {addr}, salto")
+                        logger_callback(f"\t[FTP] Nome file vuoto per {addr}, salto\n")
                         files_to_send.pop(0)
                         continue
                     
                     full_local_path = os.path.join(self.local_dir, filename)
                     
                     if not os.path.exists(full_local_path):
-                        logger_callback(f"\t[FTP] File {filename} non trovato in locale")
+                        logger_callback(f"\t[FTP] File {filename} non trovato in locale\n")
                         files_to_send.pop(0)
                         continue
                         
@@ -47,7 +47,7 @@ class FTPClient:
                         
                     # Se l'upload è andato, cancello il file locale per non ingolfare il GW
                     os.remove(full_local_path)
-                    logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamente")
+                    logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamente\n")
                     
                     files_to_send.pop(0)
                 
