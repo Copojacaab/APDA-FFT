@@ -6,7 +6,6 @@ import os
 import cmath
 import ctypes
 import resource
-from digidevice import xbee
 from datetime import datetime, timezone
 import time
 import json
@@ -28,6 +27,8 @@ from utils.get_peak_prominence import get_top_peaks_prominence
 from utils.ftp_manager import FTPClient
 from utils.influxdb_manager import InfluxHandler
 from protocol_decoder import ProtocolDecoder
+from protocol_radio import XBeeManager
+
 """
 ============================================
 """
@@ -77,14 +78,14 @@ class Gateway:
             local_dir= self.DATA_DIR
         )
 
-        # 7. setup hardware (la connessione viene aperta in run())
-        self.device = self.get_device()
+        # 7. creo istanza modulo di connessione radio con i sensori
+        self.xbee = XBeeManager(timeout=5)
 
 
     def run(self):
         """ Metodo per l'avvio operativo del gw """
         try: 
-            self.device.open()
+            self.xbee.start(self.append_history)
             self.append_history(f"--- Gateway Start: {datetime.now()} ---\n\n")
 
             # reset file sensori
@@ -98,12 +99,9 @@ class Gateway:
         except Exception as e:
             self.append_history(f"ERRORE CRITICO ESECUZIONE: {e}\n")
         finally:
-            if self.device and self.device.is_open():
-                self.device.close()
-        
+            self.xbee.stop(self.append_history)
 
-
-# HELPER FUNCTIONS
+    # HELPER FUNCTIONS
     def load_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"): 
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
@@ -177,43 +175,40 @@ class Gateway:
         except Exception as e:
             self.append_history(f"\t[ERROR] Errore in _process_data_stream per {addr}: {str(e)}")
             return []
-        
-    def get_device(self):
-        device = xbee.get_device()
-        return device
 
     # Aspetta di ricevere un pacchetto dati sul canale impostato nel gateway, da qualunque fonte.
     # I valori restituiti sono il payload e l'indirizzo del dispositivo che ha trasmesso i dati.
-    def get_data(self):
-        """
-        The function `get_data` reads data from a device, extracts the payload and address, and handles
-        exceptions by logging errors.
-        :return: The `get_data` method returns a tuple containing `list_pl` and `addr`. If an exception
-        is caught during the execution of the method, it will return `None, None`. If the exception
-        message contains the word "timeout", it will also return `None, None` without logging the error.
-        """
-        try:
-            xbee_message = self.device.read_data(timeout=5)
-            if xbee_message is None:
-                return None, None
-            self.remote_device = xbee_message.remote_device
-            if hasattr(xbee_message.remote_device, 'get_64bit_addr'):
-                addr = str(xbee_message.remote_device.get_64bit_addr()).lower()
-            else:
-                addr = str(xbee_message.remote_device).lower()
-            pl = xbee_message.data
-            list_pl = list(pl)
-            self.t = datetime.now()
-            self.original_payload = pl
-            return list_pl, addr
-        except Exception as e:
-            # Se il messaggio di errore contiene "timeout", ignora e non loggare
-            if "timeout" in str(e).lower():
-                return None, None
-            # Altri errori vengono loggati
-            self.append_history("\tErrore in get_data: %s\n" % str(e))
-            return None, None
-    
+    # def get_data(self):
+    #     """
+    #     The function `get_data` reads data from a device, extracts the payload and address, and handles
+    #     exceptions by logging errors.
+    #     :return: The `get_data` method returns a tuple containing `list_pl` and `addr`. If an exception
+    #     is caught during the execution of the method, it will return `None, None`. If the exception
+    #     message contains the word "timeout", it will also return `None, None` without logging the error.
+    #     """
+    #     try:
+    #         xbee_message = self.device.read_data(timeout=5)
+    #         if xbee_message is None:
+    #             return None, None
+    #         self.remote_device = xbee_message.remote_device
+    #         if hasattr(xbee_message.remote_device, 'get_64bit_addr'):
+    #             addr = str(xbee_message.remote_device.get_64bit_addr()).lower()
+    #         else:
+    #             addr = str(xbee_message.remote_device).lower()
+    #         pl = xbee_message.data
+    #         list_pl = list(pl)
+    #         self.t = datetime.now()
+    #         self.original_payload = pl
+    #         return list_pl, addr
+    #     except Exception as e:
+    #         # Se il messaggio di errore contiene "timeout", ignora e non loggare
+    #         if "timeout" in str(e).lower():
+    #             return None, None
+    #         # Altri errori vengono loggati
+    #         self.append_history("\tErrore in get_data: %s\n" % str(e))
+    #         return None, None
+
+
     # Aggiorna il dizionario che contiene le configurazioni dei sensori.
     # Ogni riga corrisponde ad un sensore diverso
     def check_device_config(self):
@@ -642,7 +637,7 @@ class Gateway:
             status = 'Sync sent\n'
         
         # mandManda la configurazione al sensore
-        self.device.send_data(self.remote_device, bytes.fromhex(config_hex))
+        self.xbee.send_data(addr, config_hex, self.append_history)
         return status
 
     # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
@@ -716,10 +711,12 @@ class Gateway:
             - log e pulizia
     """
     def send_file_to_influx(self, addr):
+
         """
         Trasmette i dati a InfluxDB.
         Se l'upload ha successo, cancella i file locali.
         """
+        
         current_fft_res = self.fft_dict.get(addr, {})
 
         if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
@@ -748,12 +745,15 @@ class Gateway:
     # Funzione principale (main)
     def main(self):
         try:
-            self.xbee_network = self.device.get_network() # Ottiene il device dalla rete XBee
-            payload, address = self.get_data() # Attende un pacchetto dati.
+            payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
+
             if payload is None or address is None:
-                return  # Timeout o nessun dato, non processare
-            self.check_device_config()  # Aggiorna le configurazioni dei dispositivi impostate dall'utente.
-            self.process_data(payload, address) # Processa il pacchetto dati.
+                return
+            
+            self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
+
+            self.check_device_config()
+            self.process_data(payload, address)
         except Exception as e:
             self.append_history("\tErrore generale nel main: %s\n" % str(e))
 
