@@ -290,7 +290,7 @@ class Gateway:
         peaks_list = []
         i = 1
         # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
-        while f'peak_freq_{i}' in self.fft_dict:
+        while f'peak_freq_{i}' in current_fft:
             freq = current_fft[f'peak_freq_{i}']
             mag = current_fft[f'max_mag_{i}']
             peaks_list.append(f"f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
@@ -720,12 +720,14 @@ class Gateway:
         Trasmette i dati a InfluxDB.
         Se l'upload ha successo, cancella i file locali.
         """
+        current_fft_res = self.fft_dict.get(addr, {})
+
         if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
             try:
                 self.influx_handler.upload_influx_data(
                     addr=addr,
                     files_to_send=self.file2s_influx_dict[addr],
-                    fft_dict=self.fft_dict,
+                    fft_result=current_fft_res,
                     logger_callback=self.append_history
                 )
                 
