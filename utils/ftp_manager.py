@@ -24,18 +24,18 @@ class FTPClient:
                 session.connect(self.server, 21, 60.0)
                 session.login(self.user, self.pwd)
                 session.cwd(self.path)
-                
+
                 # Giro sui file che mi sono stati passati
                 while files_to_send:
                     filename = files_to_send[0]
-                    
+
                     if not filename:
                         logger_callback(f"\t[FTP] Nome file vuoto per {addr}, salto\n")
                         files_to_send.pop(0)
                         continue
-                    
+
                     full_local_path = os.path.join(self.local_dir, filename)
-                    
+
                     if not os.path.exists(full_local_path):
                         logger_callback(f"\t[FTP] File {filename} non trovato in locale\n")
                         files_to_send.pop(0)
