@@ -98,7 +98,7 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
     
     # Range di smorzamento accettabile
     MIN_DAMPING = 0.001             
-    MAX_DAMPING = 0.06             
+    MAX_DAMPING = 0.08            
     
     magnitudes = [abs(res_fft[i]) for i in range(half_len)]
     frequencies = [i * (fs/n) for i in range(half_len)]
@@ -118,7 +118,7 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
                 prominence = calculate_prominence(magnitudes, j)
                 
                 # Se il picco "spunta" abbastanza rispetto al rumore (std) lo tengo
-                if prominence > std:                                        
+                if prominence > (0.5 * std):                                        
                     df_width = calculate_half_power_width_prominenceBased(magnitudes, prominence, j, fs, n)
                     
                     if df_width > 0:
@@ -141,8 +141,8 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
     candidates = sorted(candidates, key=lambda x: x["mag"], reverse=True)
     
     # Filtro per picchi troppo vicini
-    EXCLUSION_RATIO = 0.15
-    MIN_PROM_RATIO = 0.30
+    EXCLUSION_RATIO = 0.05
+    MIN_PROM_RATIO = 0.10
     
     final_peaks = []
     for cand in candidates:

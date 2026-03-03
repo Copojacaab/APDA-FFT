@@ -23,8 +23,7 @@ class InfluxHandler:
             files_to_send.remove(filename)
         
     def _create_and_send(self, addr, filename, fft_result):
-        date = "_".join(filename.split("_")[2:5])
-        path = os.path.join(self.local_dir, filename) 
+        path = os.path.join(self.local_dir, filename)
         
         try:
             # Parser log del sensore

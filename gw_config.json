@@ -15,6 +15,6 @@
         "logger_file": "/etc/config/scripts/SHM_Data/history.log",
         "device_file": "/etc/config/scripts/SHM_Data/devices.txt",
         "config_file": "/etc/config/scripts/config.txt",
-        "is_flexibile_structure": true
+        "is_flexibile_structure": false
     }
 }
