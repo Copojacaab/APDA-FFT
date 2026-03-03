@@ -5,12 +5,10 @@ class XBeeManager:
         Classe responsabile per la gestione fisica e logica della rete radio XBee.
     """
 
-    def __init__(self, timeout = 5, logger_callback=None):
+    def __init__(self, timeout = 5):
         self.device = None                                      # contiene: (MAC 64bit), (addr rete 16bit)
         self.network = None                                     # gestore della rete radio
         self.timeout = timeout
-
-        self.logger_callback = logger_callback                  # append_history
 
         # Rubrica: mac_stringa --> oggetto remote_device
         # STRUCT:

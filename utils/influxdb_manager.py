@@ -7,6 +7,7 @@ from math import degrees, atan2, sqrt, acos
 
 from utils.load_data import load_sensor
 class InfluxHandler:
+    
     def __init__(self, url, token, local_dir):
         self.url = url
         self.token = token

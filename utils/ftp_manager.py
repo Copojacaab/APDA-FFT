@@ -52,7 +52,7 @@ class FTPClient:
                     files_to_send.pop(0)
                 
                 session.close()
-                status=""
+                status="OK"
             except Exception as e:
                 status = str(e)
                 logger_callback(f"\t[FTP] Errore durante l'upload per {addr}: {status}")
