@@ -32,19 +32,10 @@ class InfluxHandler:
             if not data:
                 return f"Errore: file {filename} non valido o mancante"
             
-            meta = data["metadata"]
-            summ = data["summary"]
-            samples = data["samples"]
-
-            # META
+            meta, summ, samples = data["metadata"], data["summary"], data["samples"]
             date_part = "_".join(filename.split("_")[2:5])
             timestamp_base = datetime.strptime(date_part + ' ' + meta["timestamp"], '%d_%m_%Y %H:%M:%S')
-            odr_val = meta["fs"]
-            sync_bit = meta["is_synced"]
-
-            clean_axis = meta["axis"]
-            clean_range = meta["sensitivity"]
-
+            utime_base_ms = int(time.mktime(timestamp_base.timetuple()) * 1000)
 
             # --- Calcoli Fisici (RMS e Angoli) ---
             m1, m2, m3 = summ["rms_x"], summ["rms_y"], summ["rms_z"]
@@ -52,36 +43,40 @@ class InfluxHandler:
             phi = degrees(atan2(m2, m1))
             theta = degrees(acos(m3 / accrms)) if accrms != 0 else 0
 
-            # Stringa base per InfluxDB (Line Protocol)
-            base_str = (
-                "WS_Test_Data,id={addr},axis={axis} "
-                "acc_range=\"{ar}\",temperature={temp},rms_x={rx},rms_y={ry},rms_z={rz},"
-                "phi={phi},theta={theta},issync={sync},peak_freq={pf},max_mag={mm},data={dat} {utime}"
+            # 1. Costruzione tabella summary
+            summary_payload = (
+                "WS_Summary,id={addr},axis={axis} "
+                "temp={temp},rms_x={rx},rms_y={ry},rms_z={rz},phi={phi},theta={theta},"
+                "pf={pf},mm={mm},range=\"{ar}\",sync={sync} {utime}"
+            ).format(
+                addr=addr, axis=meta["axis"], temp=summ["temperature"],
+                rx=m1, ry=m2, rz=m3, phi=phi, theta=theta,
+                pf=fft_result.get('peak_freq', -1), mm=fft_result.get('max_mag', -1),
+                ar=meta["sensitivity"], sync=meta["is_synced"], utime=utime_base_ms
             )
 
-            res = []
+            # 2. Preparazione tabella Samples
+            sample_lines = []
             for i, d in enumerate(samples):
-                # Calcolo il timestamp per ogni singolo campione basandomi sull'ODR
-                utime = int((time.mktime(timestamp_base.timetuple()) + i / odr_val) * 1000)
-                res.append(base_str.format(
-                    addr=addr, axis=clean_axis, ar=clean_range,
-                    temp=summ["temperature"], rx=m1, ry=m2, rz=m3,
-                    phi=phi, theta=theta, sync=sync_bit,
-                    pf=fft_result.get('peak_freq', -1),
-                    mm=fft_result.get('max_mag', -1),
-                    dat=d, utime=utime
-                ))
+                utime = utime_base_ms + int((i / meta["fs"]) * 1000)
+                sample_lines.append(f"WS_Samples,id={addr},axis={meta['axis']} data={d} {utime}")
 
+            # 3. Invio a Batch
+            # unisco la riga summary al primo batch per efficienza
+            all_data = [summary_payload] + sample_lines
+            batch_size = 500
 
-            payload = '\n'.join(res)
-            headers = {'Content-Type': 'text/plain; charset=utf-8', 'Authorization': f'Token {self.token}'}
-            req = urllib.request.Request(self.url, data=payload.encode('utf-8'), headers=headers, method='POST')
+            headers = {'Authorization': f'Token {self.token}', 'Content-Type': 'text/plain; charset=utf-8'}
 
-            # Spedizione POST a Influx
-            with urllib.request.urlopen(req, timeout=20) as response:
-                if response.status == 204:
-                    return f"OK: {filename}"
-                return f"Errore HTTP {response.status}"
+            for i in range(0, len(all_data), batch_size):
+                batch = "\n".join(all_data[i : i + batch_size])
+                req = urllib.request.Request(self.url, data=batch.encode('utf-8'), headers=headers, method='POST')
+                # Spedizione POST a Influx
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    if response.status != 204:
+                        return f"Errore HTTP {response.status} al batch {i//batch_size}"
+
+            return f"OK: {filename} ({len(samples)} campioni) "
 
         except Exception as e:
             return f"Errore: {str(e)}"
