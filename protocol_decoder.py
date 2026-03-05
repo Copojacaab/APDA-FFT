@@ -186,7 +186,9 @@ class ProtocolDecoder:
     
     @staticmethod
     def parse_reduced_header(p):
-        """Parsa l'header del pacchetto 0xD4 (dati ridotti)"""
+        """
+            Traduce l'header del pacchetto 0xD4 (dati ridotti) in list(str)
+        """
 
         axis_info = al.get(p[8], ('UnknownAxis', 'bad axis value'))
         return {
@@ -196,7 +198,8 @@ class ProtocolDecoder:
             "axis_file": axis_info[1],
             "sync": sl.get(p[9], "Unknown")
         }
-    
+
+
     @staticmethod
     def parse_shock_header(p):
         "Parsa l'header del pachetto 0xC1 (evento shock)"

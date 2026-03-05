@@ -48,8 +48,9 @@ class XBeeManager:
 
     def receive_data(self, logger_callback):
         """
-            Si mette in ascolto per nuovi pacchetti
-            
+            Si mette in ascolto di nuovi pacchetti dai sensori per self.timeout s:
+                - Se non arriva nulla => restituisce None 
+                - Se arriva un pacchetto => prendo: MAC, aggiorno la rubrica e return
             Return: 
                 tuple: (payload_list, address_str, payload_raw_bytes)
         """
@@ -61,11 +62,8 @@ class XBeeManager:
             
             remote_device = xbee_message.remote_device
 
-            # estrazione indirizzo MAC pulito
-            if hasattr(remote_device, 'get_64bit_addr'):
-                addr = str(remote_device.get_64bit_addr()).lower()
-            else:
-                addr = str(remote_device).lower()
+            # estrazione indirizzo MAC 
+            addr = str(remote_device).lower()
 
             # salvo/aggiorno il dispositivo nella rubrica
             self._known_devices[addr] = remote_device
@@ -105,3 +103,4 @@ class XBeeManager:
             Recupera l'oggetto fisico del dispositivo dalla rubrica
         """
         return self._known_devices.get(addr)
+    
