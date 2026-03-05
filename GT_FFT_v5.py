@@ -133,19 +133,19 @@ class Gateway:
 
     def _process_stream_data(self, payload_slice, addr, first_value=0, is_append=False):
         """
-            Method to decode payload and write data to file
+            Metodo unificato per pipeline di decodifica e scrittura dei campioni su file.
+
 
             Args:
-                payload_slice: portion of the payload to decode (list)
-                addr: device address (string)
-                first_value: baseline value for offset
-                is_append: if True, append to existing file; if false write in a new file (default False)
+                payload_slice: fetta del payload da decodificare (list)
+                addr: MAC(string)
+                first_value: valore di baseline per offset
+                is_append: True => append al file esistente; False => crea un nuovo file (default False)
 
             Returns:
-                decoded_data: list of decoded float value as formatted strings
-
+                acq_data: (list(str)) campioni decodificati
             Raises:
-                errors are logged via append_history
+                errori loggati tramite append_history()
 
             Example:
                 #in process_mid_stream
@@ -209,19 +209,17 @@ class Gateway:
     #         return None, None
 
 
-    # Aggiorna il dizionario che contiene le configurazioni dei sensori.
-    # Ogni riga corrisponde ad un sensore diverso
     def check_device_config(self):
         """
-        The function `check_device_config` reads a configuration file line by line, extracts sensor names
-        and parameters, and stores them in a dictionary.
+            Apre il file di configurazione dei sensori (/scripts/config.txt) e
+            e mappa addr => parametri_sensore
         """
         with open(self.config_file, 'r') as c:
             lines = c.readlines()               # Legge tutte le righe insieme.
             for line in lines:                  # Analizza una riga per volta.
-                config_address = line[:16]      # Nome sensore.
-                config_parameters = line[17:]   # Parametri.
-                self.config_dict[config_address] = config_parameters.strip()
+                config_address = line[:16]      # MAC
+                config_parameters = line[17:]   # Parametri (range, ODR, asse, soglie si shock)
+                self.config_dict[config_address] = config_parameters.strip() 
 
     # Processa il payload ricevuto, in base al primo byte del pacchetto.
     # 0xA1 = sincronizzazione;
@@ -248,6 +246,7 @@ class Gateway:
             self.process_shock_data(payload, addr)
         else:
             self.process_unknown_data(payload, addr)
+
 
     # Processa il contenuto del pacchetto 0xA1 (sincronizzazione).
     # 1 - Verifica che il sensore sia mappato nel file "devices.txt", e nel caso, lo aggiunge alla lista;
@@ -321,11 +320,15 @@ class Gateway:
         if addr in self.fft_dict:
             self.fft_dict.pop(addr)
 
-    # Processa il contenuto del pacchetto 0xD1 (inizio stream di dati).
-    # 1 - Verifica che non ci siano altri file ancora aperti per quel sensore;
-    # 2 - Inizializza un nuovo file con i parametri ricevuti nel payload;
-    # 3 - Traduce i primi dati accelerometrici contenuti nel payload e li scrive nel file.
+
+
     def process_start_stream(self, payload, addr):
+        """
+             Processa il contenuto del pacchetto 0xD1 (inizio stream di dati).
+             1 - Verifica che non ci siano altri file ancora aperti per quel sensore;
+             2 - Inizializza un nuovo file con i parametri ricevuti nel payload;
+             3 - Traduce i primi dati accelerometrici contenuti nel payload e li scrive nel file.
+        """
         self.append_history(f'{self.t.strftime("%d/%m/%Y, %H:%M:%S")}, {addr} - Start data transmission\n')
         checkF_status = self.check_files(addr, 1)
         if checkF_status != '':
@@ -365,14 +368,13 @@ class Gateway:
 
 
 
-    # Processa il contenuto del pacchetto 0xD2 (continuazione stream di dati).
-    # 1 - Verifica che il numero del pacchetto sia quello aspettato, nel caso apre un nuovo file;
-    # 2 - Traduce i dati e li scrive nel file.
+
     def process_mid_stream(self, payload, addr):
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)                   #validazione packet stream
-        if checkF_status != '':
+        
+        if checkF_status != '':                                 #check se pkg e' ok
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
                 filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
@@ -380,30 +382,21 @@ class Gateway:
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
 
-        first_val = self.first_data_dict.get(addr, 0)
+        first_val = self.first_data_dict.get(addr, 0)           #valore baseline
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
-    # Processa il contenuto del pacchetto 0xD3 (fine stream di dati).
-    # 1 - Verifica che il numero del pacchetto sia quello aspettato, nel caso apre un nuovo file;
-    # 2 - Traduce i dati e li scrive nel file;
-    # 3 - Prepara il file per la trasmissione al server;
-    # 4 - Resetta il numero di pacchetto aspettato a 0 per la prossima trasmissione.
+
+
     def process_end_stream(self, payload, addr):
         """
-        This Python function processes end data transmission, checks for anomalies, decodes payload,
-        writes data to files, performs FFT, and adds data to an InfluxDB queue.
-        
-        :param payload: The `payload` parameter in the `process_end_stream` method seems to be a byte
-        array or a list of bytes. It is used to extract information such as packet number and
-        acquisition data from the incoming data stream. The method processes the end of a data
-        transmission stream and performs various operations based on
-        :param addr: The `addr` parameter in the `process_end_stream` method seems to represent an
-        address or identifier associated with the data transmission process. It is used for various
-        purposes within the method, such as constructing file paths, checking file status, decoding
-        payload data, and managing dictionaries related to file handling and data
+            Gestisce la chiusura della sessione di una trasmissione dati
         """
+
         self.append_history('%d/%d/%d, %d:%d:%d, %s - End data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
+
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+
+        # Gestione errori pkg stream
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
         if checkF_status != '':
@@ -413,12 +406,10 @@ class Gateway:
                 self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+
+        # Estrazione dati
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
-
-        """
-        ==================================
-        """
 
         if addr in self.open_file_dict and self.open_file_dict[addr]:
             full_path = self.open_file_dict[addr]
@@ -430,7 +421,7 @@ class Gateway:
             else:
                 self.file2s_dict_ftp[addr] = [file2send]
 
-            self.work_flow_fft(addr, full_path)
+            self.work_flow_fft(addr, full_path)         # start pipeline FFT
 
             # aggiunta alla coda influxdb
             if checkF_status == '':
@@ -441,19 +432,21 @@ class Gateway:
         else:
             self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
 
+        # Cleanup dizionari
         if addr in self.open_file_dict:
             self.open_file_dict.pop(addr)
         if addr in self.first_data_dict:
             self.first_data_dict.pop(addr)
-        self.pack_num_dict[addr] = 0
+        self.pack_num_dict[addr] = 0            #reset pkg counter
 
 
-    # Processa il contenuto del pacchetto 0xD4 (dati ridotti).
-    # 1 - Traduce i dati e li scrive in un nuovo file.
+
     def process_reduced_stream_data(self, payload, addr):
         self.append_history(f'{self.t.strftime("%d/%m/%Y, %H:%M:%S")}, {addr} - Shock data transmission\n')
 
         date_time = self.t.strftime("%d_%m_%Y_%H_%M_%S")
+
+        # creazione file
         filename =  f"{self.DATA_DIR}{addr}_{date_time}_reduced.log"
 
         # 0. Parsing header
@@ -467,19 +460,24 @@ class Gateway:
         # 2. Scrittura dati
         self._process_stream_data(payload[11:], addr, first_value=0, is_append=True)
 
-        # 3. Cleanup: rimuovo dalla gestione stream il file perche' e' autoconclusivo
+        # 3. Cleanup: rimuovo dalla gestione stream il file (autoconclusivo)
         self.open_file_dict.pop(addr, None)
-        self.file2s_dict_ftp.setdefault(addr, []).append(filename.replace(self.DATA_DIR, ''))       #?????????
+        self.file2s_dict_ftp.setdefault(addr, []).append(filename.replace(self.DATA_DIR, ''))       #inserisce nella coda FTP
 
-    # Processa il contenuto del pacchetto 0xC1 (evento vibrazinale).
-    # 1 - Traduce i dati e li scrive in un nuovo file.
+
+
     def process_shock_data(self, payload, addr):
+        """
+            Gestisce l'evento di shock: header solo con timestamp => samples.
+            Invio immediato a FTP
+        """
         self.append_history(f"{self.t.strftime('%d/%m/%Y, %H:%M:%S')}, {addr} - Shock data transmission\n")
         
         # 0 Parsing header
         header = ProtocolDecoder.parse_shock_header(payload)
 
         date_time = self.t.strftime('%d_%m_%Y_%H_%M_%S')
+
         filename =  f"{self.DATA_DIR}{addr}_{date_time}_shock.log"
         
         self.open_file_dict[addr] = filename
@@ -508,21 +506,31 @@ class Gateway:
         #     else:
         #         self.file2s_dict_ftp[addr] = [file2send]
 
-    # Processa il contenuto del pacchetto.
+    
     def process_unknown_data(self, payload, addr):
+        """
+            Gestisce pacchetto non identificato: 
+                aggiungo evento all'history e skippo
+        """
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Unexpected data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
         self.append_history("\t" + self.original_payload.hex() + "\n") #cambiato da encode a hex
 
-    # Aggiorna il file che mappa i sensori, impostando il delay del nuovo dispositivo.
-    # Il delay specifica le tempistiche con le quali il dispositivo in questione dovra trasmettere.
+
+
     def update_device_file(self, addr):
+        """
+            Aggiorna il delay di invio d el sensore.
+            (delay incrementale non so perche)
+        """
         self.device_dict[addr] = self.delay
-        self.delay = self.delay + self.delay_time
+        self.delay = self.delay + self.delay_time   
         with open(self.device_file, 'a') as f:
             f.write(addr + ' %02d \n' % self.device_dict[addr])
 
-    # Verifica se ci sono dei problemi, tramite i parametri di sincronizzazzione ricevuti dal sensore.
+
+
     def check_device(self, p):
+
         # Decoding del payload
         info = ProtocolDecoder.parse_sync_info(p)
 
@@ -559,13 +567,10 @@ class Gateway:
 
         return status
 
-    # Funzioen contenente la logica di lavoro della procedura fft:
-    # 1. Carica i dati dal log del sensore tramite load_sensor
-    # 2. Avvia la funzioene per il calcolo della fft:
-    #   - IN => samples_sensore e fs
-    #   - OUT => portante_principale, magnitudo_portante
+
     
     def work_flow_fft(self, addr, log_file_path):
+
         try:
             start_cpu = time.process_time()                                 #snapshot iniziale CPU e tempo reale
             start_wall = time.perf_counter()
@@ -619,6 +624,7 @@ class Gateway:
             print(f"\t[ERROR] Errore durante FFT: {str(e)}\n")
 
 
+
     def send_config(self, addr):
         """
         Costruisce e trasmette il pacchetto di sincronizzazione(0xA1 o 0xA2) al sensore che ne ha fatto richiesta.
@@ -640,10 +646,12 @@ class Gateway:
         self.xbee.send_data(addr, config_hex, self.append_history)
         return status
 
-    # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
+   
+
     def check_files(self, addr, n_pack):
         """
-            Controlla lo stream dei pacchetti per un determinato sensore e un determinato numero di pacchetto.
+            Controlla se lo stream dei pacchetti per sta seguendo il giusto ordine
+            e se ci sono file che non sono stati chiusi per il sensore.
 
             Return: status='' (empty) se tutto ok / status = str (str=err) altrimenti
             Param: 
@@ -675,11 +683,11 @@ class Gateway:
         self.pack_num_dict[addr] = n_pack
         return status
 
-    # Trasmette i dati, ricevuti dai sensori, al server tramite FTP.
-    # Se per il sensore in esame ci sono piu file, li trasmette tutti.
+
+
     def send_file_to_server(self, addr):
         """
-        Trasmette i dati al server tramite FTP.
+        Trasmette i dati al server tramite FTP. (tutti quelli a disposizione per il sensore)
         Se l'upload ha successo, cancella i file locali.
         """
         if addr in self.file2s_dict_ftp and self.file2s_dict_ftp[addr]:
@@ -695,7 +703,9 @@ class Gateway:
             
             return result
         return ""
-    
+
+
+
     def _cleanup_files(self, addr, files_list):
         """
         Cancella i file dalla memoria locale dopo un invio riuscito.
@@ -714,19 +724,16 @@ class Gateway:
             except Exception as e:
                 self.append_history(f"\t[ERROR] Impossibile rimuovere {filename}: {str(e)}\n")
 
-    """
-        Gestore della coda: processa tutti i file in attesa per sensore
-            - verifica se in file2s_influx_dict ci sono file per l'invio
-            - per ogni file che trova chiama la worker create_influx_line_protocol
-            - log e pulizia
-    """
-    def send_file_to_influx(self, addr):
 
+
+
+    def send_file_to_influx(self, addr):
         """
-        Trasmette i dati a InfluxDB.
-        Se l'upload ha successo, cancella i file locali.
+            Gestore della coda: processa tutti i file in attesa per sensore
+                - verifica se in file2s_influx_dict ci sono file per l'invio
+                - per ogni file che trova chiama la worker create_influx_line_protocol
+                - log e pulizia
         """
-        
         current_fft_res = self.fft_dict.get(addr, {})
 
         if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
@@ -744,15 +751,20 @@ class Gateway:
             except Exception as e:
                 self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
 
-    # Scrive una stringa nel file "history.log".
+
+
     def append_history(self, stringa):
+        """
+            Scrive una riga nel file di history
+        """
         with open(self.logger_file, 'a') as f:
             f.write(stringa)
 
     # SPOSTATO IN PROTOCO_DECODER
     # def decode_payload(self, cut_payload, first):
 
-    # Funzione principale (main)
+
+
     def main(self):
         try:
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
@@ -766,7 +778,8 @@ class Gateway:
         except Exception as e:
             self.append_history("\tErrore generale nel main: %s\n" % str(e))
 
-# Inizio del programma
+
+
 if __name__ == "__main__":
     gw = Gateway()
     gw.run()
