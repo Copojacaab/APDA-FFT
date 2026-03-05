@@ -45,6 +45,7 @@ class XBeeManager:
             except Exception as e:
                 logger_callback(f"\t[Radio-ERROR] Errore durante la chiusura del modulo XBee: {str(e)}")
 
+
     def receive_data(self, logger_callback):
         """
             Si mette in ascolto per nuovi pacchetti
@@ -65,7 +66,7 @@ class XBeeManager:
                 addr = str(remote_device.get_64bit_addr()).lower()
             else:
                 addr = str(remote_device).lower()
-            
+
             # salvo/aggiorno il dispositivo nella rubrica
             self._known_devices[addr] = remote_device
 
@@ -80,8 +81,8 @@ class XBeeManager:
     
     def send_data(self, addr, hex_payload, logger_callback):
         """
-        Docstring for send_data
-        
+            Invia il payload al sensore con l'indirizzo MAC specificatos
+            
         :param addr: MAC address sensore
         :param hex_payload: payload da inviare
         """
