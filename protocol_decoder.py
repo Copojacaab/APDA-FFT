@@ -54,14 +54,14 @@ class ProtocolDecoder:
         t = datetime.now(timezone.utc)
 
         # 0. Parte comune di timestamp e sync
-        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
-        #     int(t.microsecond / 1000), delay
-        # )
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
             int(t.microsecond / 1000), delay
         )
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
 
         param = config_str.split(' ')
         if len(param) < 17:                     #fallback a sync se parametri insufficienti
@@ -106,12 +106,18 @@ class ProtocolDecoder:
 
     @staticmethod
     def decode_float_v2(high_byte, low_byte):
+        """
+            Decodifica due byte (high_byte e low_byte) in un valore floating-point a 16 bit.
+        """
+        # Maschere per estrazione esponente, mantissa e segno
         exp_mask, sign_mask, mantissa_mask = 0x7C00, 0x8000, 0x03FF
+
         small_number = 0.00006103515
-        hex_char = (high_byte << 8) | low_byte
+
+        hex_char = (high_byte << 8) | low_byte                          #combina i due byte in un intero a 16 bit
         exponent = (hex_char & exp_mask) >> 10
-        sign = -1 if (hex_char & sign_mask) else 1 
-        mantissa = (hex_char & mantissa_mask) / 1000.0
+        sign = -1 if (hex_char & sign_mask) else 1
+        mantissa = (hex_char & mantissa_mask) / 1024.0
 
         if exponent == 31:
             return float('nan') if mantissa != 0 else float('inf')
@@ -121,6 +127,28 @@ class ProtocolDecoder:
     
     @classmethod
     def decode_samples(cls, raw_payload, first_value=0.0):
+        """
+        Decodifica una sequenza di campioni grezzi ricevuti dai sensori.
+        
+        Questa funzione elabora il payload grezzo proveniente dai sensori, ogni coppia
+        di byte è convertita in un singolo valore floating-point utilizzando
+        il metodo decode_float_v2. Per ogni campione decodificato, viene aggiunto
+        un offset fornito da first_value per calibrazione o normalizzazione dei dati.
+        
+        Args:
+            raw_payload (list): Lista di byte grezzi ricevuti dai sensori,
+                               elaborata in coppie consecutive.
+            first_value (float, optional): Valore di offset da aggiungere a ogni
+                                          campione decodificato. Default è 0.0.
+        
+        Returns:
+            list: Lista di stringhe rappresentanti i campioni decodificati,
+                  formattati con 8 caratteri di larghezza e 6 decimali di precisione.
+        
+        Nota:
+            - La funzione ignora il byte finale se raw_payload ha lunghezza dispari.
+            - I campioni sono restituiti come stringhe formattate con padding.
+        """
         samples = []
         for i in range(0, len(raw_payload), 2):
             if i+1 < len(raw_payload):

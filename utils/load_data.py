@@ -42,7 +42,7 @@ def load_sensor(filepath):
     metadata["is_synced"] = 1.0 if sync_raw in ["Synced", "Synced2"] else 0.0
     
     # RIGA2 2: SUMMARY
-    summary_line = lines[2].strip().split(";");
+    summary_line = lines[2].strip().split(";")
     summary["temperature"] = float(summary_line[0])
     summary["rms_x"] = float(summary_line[1])
     summary["rms_y"] = float(summary_line[2])
@@ -57,7 +57,7 @@ def load_sensor(filepath):
     # CAMPIONI
     for line in lines[4:]:
         vals = [v for v in line.strip().split(";") if v]
-        if not vals: 
+        if not vals:
             continue
         
         for data in vals:

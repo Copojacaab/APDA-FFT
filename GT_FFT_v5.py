@@ -84,7 +84,7 @@ class Gateway:
 
     def run(self):
         """ Metodo per l'avvio operativo del gw """
-        try: 
+        try:
             self.xbee.start(self.append_history)
             self.append_history(f"--- Gateway Start: {datetime.now()} ---\n\n")
 
@@ -371,7 +371,7 @@ class Gateway:
     def process_mid_stream(self, payload, addr):
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
         n_pck = ProtocolDecoder.get_packet_number(payload)
-        checkF_status = self.check_files(addr, n_pck)
+        checkF_status = self.check_files(addr, n_pck)                   #validazione packet stream
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
@@ -523,8 +523,10 @@ class Gateway:
 
     # Verifica se ci sono dei problemi, tramite i parametri di sincronizzazzione ricevuti dal sensore.
     def check_device(self, p):
+        # Decoding del payload
         info = ProtocolDecoder.parse_sync_info(p)
 
+        # Costruzione del messaggio di status
         status = f"Datetime: {info['datetime']}\n"
 
         if info['battery'] is not None:
@@ -573,7 +575,7 @@ class Gateway:
             fs = data_loaded["metadata"]["fs"]
             
             if(len(samples) > 0):
-                res_fft = start_fft(samples, fs)                            # risultati fft
+                res_fft = start_fft(samples, fs)                           # risultati fft
             else:
                 print(f"\t[WARNING] Nessun campione nel file per FFT")
 
@@ -612,13 +614,11 @@ class Gateway:
             self.fft_dict[addr]["wall_time"] = wall_delta
             self.fft_dict[addr]["percentage_cpu"] = cpu_percent
             self.fft_dict[addr]["memrss"] = mem_peal
+
         except Exception as e:
             print(f"\t[ERROR] Errore durante FFT: {str(e)}\n")
-            
-            
-                
-    # Costruisce e trasmette il pacchetto di sincronizzazione al sensore che ne ha fatto richiesta.
-    # I dati cambiano in base alla presenza o meno dell'identificativo del sensore all'interno del file "config.txt".
+
+
     def send_config(self, addr):
         """
         Costruisce e trasmette il pacchetto di sincronizzazione(0xA1 o 0xA2) al sensore che ne ha fatto richiesta.
@@ -642,9 +642,19 @@ class Gateway:
 
     # Verifica se ci sono file che non sono stati chiusi, associati al dispositivo "addr".
     def check_files(self, addr, n_pack):
+        """
+            Controlla lo stream dei pacchetti per un determinato sensore e un determinato numero di pacchetto.
+
+            Return: status='' (empty) se tutto ok / status = str (str=err) altrimenti
+            Param: 
+                - addr: MAC sensore
+                - n_pack: numero di package estratto dal payload
+            
+            Info: pack_num_dict: dict che mappa 'addr -> last n_pack'
+        """
         status = ''
         if addr in self.open_file_dict:
-            if n_pack < self.pack_num_dict[addr] + 1:
+            if n_pack < self.pack_num_dict[addr] + 1:       # se il numero di paccheto non combacia
                 with open(self.open_file_dict[addr], 'a') as f:
                     status = '\tAnomalous closure for data stream - %s\n' % self.open_file_dict[addr]
                     f.write('* INCOMPLETE TRANSMISSION *;')
@@ -749,7 +759,6 @@ class Gateway:
 
             if payload is None or address is None:
                 return
-            
             self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
 
             self.check_device_config()
