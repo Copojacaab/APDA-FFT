@@ -1,21 +1,28 @@
 import math
 
 """
-{
-    "metadata":{
-        "timpestamp": "...",
-        "sensitivity": "2g",
-        "fs": 31.25
-        "axis": "X"
-    },
-    "summary": {
-        "temperature": 25.010,
-        "rms_x": -0.0222,
-        "rms_y": ...,
-        ...
-    },
-    "samples": []
-}
+    utils.load_data: 
+        Parser per i file di log del sensore. Trasforma i dati float in dict per l'analisi FFT e il caricamento su 
+        
+    Param:
+        - filepath: percorso al file di log del sensore
+    
+    Returns:
+        - dict={
+                    "metadata":{
+                        "timpestamp": "...",
+                        "sensitivity": "2g",
+                        "fs": 31.25
+                        "axis": "X"
+                    },
+                    "summary": {
+                        "temperature": 25.010,
+                        "rms_x": -0.0222,
+                        "rms_y": ...,
+                        ...
+                    },
+                    "samples": []
+                }
 """
 
 def load_sensor(filepath):
