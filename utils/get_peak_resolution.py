@@ -1,4 +1,5 @@
 import statistics
+
 """
 utils.get_peak_resolution
 Utility per la ricerca dei picchi pensato per l'applicazione a strutture rigide (come gallerie).
