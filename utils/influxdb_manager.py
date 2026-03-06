@@ -6,29 +6,43 @@ from datetime import datetime
 from math import degrees, atan2, sqrt, acos
 
 from utils.load_data import load_sensor
+
+
+"""
+    utils.influxdb_manager:
+    Responsabile dell'invio dei dati a InfluxDB tramite API HTTP,
+    Distingue due tipi di informazioni per ogni sensore:
+        - WS_Summary: metadati e statische aggregate (temp, RMS, angoli, res_ftt)
+        - Ws_Samples: campioni sensore accellerometrico (associato al timestamp)
+
+    Note:
+    ------  
+    - Cleaunup dei file dalla memoria fatto in ftp_manger.py (influx => ftp => cleanup)
+"""
 class InfluxHandler:
     
     def __init__(self, url, token, local_dir):
-        self.url = url
+        self.url = url                          #http://localhost:8086/api/v2/write?org=wise&bucket=SHM_Data&precision=ms
         self.token = token
         self.local_dir = local_dir
         
-    def upload_influx_data(self, addr, files_to_send, fft_result, logger_callback):
-        if not files_to_send:
-            return 
-        
-        # Uso una copia della lista così posso rimuovere gli elementi mentre ciclo
-        for filename in list(files_to_send):
-            status = self._create_and_send(addr, filename, fft_result)
-            logger_callback(f"\t[Influx] {status}\n")
-            files_to_send.remove(filename)
-        
+
+    
+    """
+        Creazione del payload influxdb per un singolo file e invio a influx 
+        Params:
+            - addr: MAC
+            - filename: nome del file da processare
+            - fft_result: dizionario con i risultati dell'analisi FFT (peak_freq, max_mag)
+        Returns: 
+            - status: stringa di successo o errore
+    """
     def _create_and_send(self, addr, filename, fft_result):
         path = os.path.join(self.local_dir, filename)
         
         try:
             # Parser log del sensore
-            data = load_sensor(path)
+            data = load_sensor(path)                #stesso parser dell'fft
             if not data:
                 return f"Errore: file {filename} non valido o mancante"
             
@@ -43,7 +57,7 @@ class InfluxHandler:
             phi = degrees(atan2(m2, m1))
             theta = degrees(acos(m3 / accrms)) if accrms != 0 else 0
 
-            # 1. Costruzione tabella summary
+            # 1. Costruzione tabella summary (WS_Summary)
             summary_payload = (
                 "WS_Summary,id={addr},axis={axis} "
                 "temp={temp},rms_x={rx},rms_y={ry},rms_z={rz},phi={phi},theta={theta},"
@@ -55,7 +69,7 @@ class InfluxHandler:
                 ar=meta["sensitivity"], sync=meta["is_synced"], utime=utime_base_ms
             )
 
-            # 2. Preparazione tabella Samples
+            # 2. Preparazione tabella samnples (WS_Samples)
             sample_lines = []
             for i, d in enumerate(samples):
                 utime = utime_base_ms + int((i / meta["fs"]) * 1000)
@@ -80,3 +94,20 @@ class InfluxHandler:
 
         except Exception as e:
             return f"Errore: {str(e)}"
+
+
+
+    """
+        Punto di ingresso chiamato dal gateway. Gestisce la coda dei file da inviare
+    """
+    def upload_influx_data(self, addr, files_to_send, fft_result, logger_callback):
+        if not files_to_send:
+            return 
+        
+        # Loop sui file da inviare:
+        # creo una copia della lista (per ciclare)
+        # lavoro sulla lista originale (per remove)
+        for filename in list(files_to_send):
+            status = self._create_and_send(addr, filename, fft_result)
+            logger_callback(f"\t[Influx] {status}\n")
+            files_to_send.remove(filename)
