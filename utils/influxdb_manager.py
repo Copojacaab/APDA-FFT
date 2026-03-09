@@ -85,10 +85,15 @@ class InfluxHandler:
             for i in range(0, len(all_data), batch_size):
                 batch = "\n".join(all_data[i : i + batch_size])
                 req = urllib.request.Request(self.url, data=batch.encode('utf-8'), headers=headers, method='POST')
-                # Spedizione POST a Influx
-                with urllib.request.urlopen(req, timeout=20) as response:
-                    if response.status != 204:
-                        return f"Errore HTTP {response.status} al batch {i//batch_size}"
+
+                try:
+                    with urllib.request.urlopen(req, timeout=20) as response:
+                        if response.status != 204:
+                            return f"Errore HTTP {response.status}"
+                except urllib.error.HTTPError as e:
+                    # LEGGI IL CORPO DELL'ERRORE
+                    error_msg = e.read().decode('utf-8')
+                    return f"Errore 400 Dettagliato: {error_msg}"
 
             return f"OK: {filename} ({len(samples)} campioni) "
 
