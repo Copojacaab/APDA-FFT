@@ -152,13 +152,13 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
     
     # Range di smorzamento accettabile
     # - 0.1%: frequenze elettriche
-    # - 7%: damping per strutture fisiche (0,5% - 5%) 
-    MIN_DAMPING = 0.001             
-    MAX_DAMPING = 0.07            
-    
+    # - 7%: damping per strutture fisiche (0,5% - 5%)
+    MIN_DAMPING = 0.001
+    MAX_DAMPING = 0.07
+
     magnitudes = [abs(res_fft[i]) for i in range(half_len)]
     frequencies = [i * (fs/n) for i in range(half_len)]
-    
+
     # Soglia dinamica per rumore di fondo
     avg = statistics.mean(magnitudes)
     std = statistics.stdev(magnitudes)
@@ -174,7 +174,7 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
                 prominence = calculate_prominence(magnitudes, j)
                 
                 # se il picco spunta abbastanza
-                if prominence > (0.5 * std):                                        
+                if prominence > (0.5 * std):
                     df_width = calculate_half_power_width_prominenceBased(magnitudes, prominence, j, fs, n)
                     
                     if df_width > 0:
@@ -210,7 +210,7 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
             rel_dist = abs(cand["freq"] - accepted["freq"]) / accepted["freq"]
             
             # check distanza relativa
-            if rel_dist < EXCLUSION_RATIO: 
+            if rel_dist < EXCLUSION_RATIO:
                 
                 prom_ratio = cand["prominence"] / cand["mag"]   #calcolo rapporto tra prom e mag
                 if prom_ratio < MIN_PROM_RATIO:                 #se spicca poco => gobba

@@ -62,7 +62,7 @@ class FTPClient:
                         
                     # Se l'upload è andato, cancello il file locale per non ingolfare il GW
                     os.remove(full_local_path)
-                    logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamente\n")
+                    logger_callback(f"\t[FTP] File {filename} trasferito e rimosso correttamente\n")
                     
                     files_to_send.pop(0)
                 

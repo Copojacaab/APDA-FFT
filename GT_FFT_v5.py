@@ -248,26 +248,16 @@ class Gateway:
             self.process_unknown_data(payload, addr)
 
 
-    # Processa il contenuto del pacchetto 0xA1 (sincronizzazione).
-    # 1 - Verifica che il sensore sia mappato nel file "devices.txt", e nel caso, lo aggiunge alla lista;
-    # 2 - Verifica lo stato del sensore;
-    # 3 - Risponde alla richiesta di sincronizzazione;
-    # 4 - Verifica che non ci siano altri file ancora aperti per quel sensore;
-    # 5 - Sposta i file del dispositivo corrispondente nel server;
-    # 6 - Riporta i risultati nel file "history.log".
+
     def process_sync_data(self, payload, addr):
         """
-        The `process_sync_data` function processes synchronization data, checks device status, sends
-        configuration, checks files, logs peak frequencies, system monitoring data, and sends files to
-        Influx and FTP server.
-        
-        :param payload: The `payload` parameter in the `process_sync_data` method likely contains data that
-        needs to be processed during synchronization. It is used in various method calls within the
-        function, such as `check_device(payload)`, `send_config(addr)`, and `check_files(addr, 0)`. The
-        :param addr: The `addr` parameter in the `process_sync_data` method seems to represent the address
-        of a device or a location to which data is being synchronized. It is used throughout the method for
-        various purposes such as logging, updating device information, sending configuration, checking
-        files, and sending data to specific addresses
+            Processa il contenuto del pacchetto 0xA1 (sincronizzazione).
+            1 - Verifica che il sensore sia mappato nel file "devices.txt", e nel caso, lo aggiunge alla lista;
+            2 - Verifica lo stato del sensore;
+            3 - Risponde alla richiesta di sincronizzazione;
+            4 - Verifica che non ci siano altri file ancora aperti per quel sensore;
+            5 - Sposta i file del dispositivo corrispondente nel server;
+            6 - Riporta i risultati nel file "history.log".
         """
 
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Syncronization request\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
@@ -301,7 +291,7 @@ class Gateway:
         percentage_cpu = current_fft.get('percentage_cpu', -1)
         peak_memrss = current_fft.get('memrss', -1)
 
-        sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
+        sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}\n"
 
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
@@ -379,6 +369,7 @@ class Gateway:
             if "Anomalous closure" in checkF_status:
                 filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
+                self.open_file_dict[addr] = filename
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
 
@@ -404,6 +395,7 @@ class Gateway:
             if "Anomalous closure" in checkF_status:
                 filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
+                self.open_file_dict[addr] = filename
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
 
@@ -764,20 +756,21 @@ class Gateway:
     # def decode_payload(self, cut_payload, first):
 
 
-
     def main(self):
         try:
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
 
             if payload is None or address is None:
                 return
+
             self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
 
+            address = address.lower().replace("-", "").strip()
+            
             self.check_device_config()
             self.process_data(payload, address)
         except Exception as e:
             self.append_history("\tErrore generale nel main: %s\n" % str(e))
-
 
 
 if __name__ == "__main__":

@@ -63,7 +63,7 @@ class XBeeManager:
             remote_device = xbee_message.remote_device
 
             # estrazione indirizzo MAC 
-            addr = str(remote_device).lower()
+            addr = str(remote_device).lower().replace(" -", "").strip()
 
             # salvo/aggiorno il dispositivo nella rubrica
             self._known_devices[addr] = remote_device
@@ -92,7 +92,7 @@ class XBeeManager:
                 self.device.send_data(remote_device, payload_bytes)
                 return True
             else:
-                logger_callback(f"\t[Radio-WARN] dispositivo non presente in rubrica: {addr}")
+                logger_callback(f"\t[Radio-WARN] dispositivo non presente in rubrica: {addr}\n")
                 return False
         except Exception as e:
             logger_callback(f"\t[Radio-ERROR] Errore durante l'invio al sensore {addr}: {str(e)}\n")
