@@ -1,7 +1,4 @@
-# The `Gateway` class is a Python program that handles data received from sensors, processes the data,
-# performs FFT analysis, sends data to InfluxDB and FTP server, and logs the process in a history
-# file.
-# coding=utf-8
+
 import os
 import cmath
 import ctypes

@@ -6,6 +6,7 @@ rl = {0x01: '2g', 0x02: '4g', 0x03: '8g'}
 ol = {0x07: '31.25 Hz', 0x06: '62.5 Hz', 0x05: '125 Hz', 0x04: '250 Hz', 0x03: '500 Hz'}
 al = {0x01: ('Xaxis', 'X axis'), 0x02: ('Yaxis', 'Y axis'), 0x03: ('Zaxis', 'Z axis')}
 sl = {0: 'Asynced', 1: 'Synced', 2: 'Synced2'}
+
 class ProtocolDecoder:
     """
     Responsabile per la traduzione dal binario dei sensori a 
@@ -109,7 +110,7 @@ class ProtocolDecoder:
         """
             Decodifica due byte (high_byte e low_byte) in un valore floating-point a 16 bit.
         """
-        # Maschere per estrazione esponente, mantissa e segno
+        # Mask per estrazione esponente, mantissa e segno
         exp_mask, sign_mask, mantissa_mask = 0x7C00, 0x8000, 0x03FF
 
         small_number = 0.00006103515
