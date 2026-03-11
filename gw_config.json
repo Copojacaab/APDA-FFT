@@ -11,6 +11,9 @@
         "org": "4853047a5696ea95",
         "bucket": "FFT_and_Data"
     },
+    "fastapi": {
+        "url": "http://locahost:8080/ingest"
+    },
     "gateway": {
         "logger_file": "/etc/config/scripts/SHM_Data/history.log",
         "device_file": "/etc/config/scripts/SHM_Data/devices.txt",
