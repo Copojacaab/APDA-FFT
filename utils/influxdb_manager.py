@@ -2,6 +2,7 @@ import urllib.request
 import urllib.error
 import time
 import os
+import re
 from datetime import datetime
 from math import degrees, atan2, sqrt, acos
 
@@ -47,10 +48,23 @@ class InfluxHandler:
                 return f"Errore: file {filename} non valido o mancante"
             
             meta, summ, samples = data["metadata"], data["summary"], data["samples"]
-            date_part = "_".join(filename.split("_")[2:5])
-            timestamp_base = datetime.strptime(date_part + ' ' + meta["timestamp"], '%d_%m_%Y %H:%M:%S')
-            utime_base_ms = int(time.mktime(timestamp_base.timetuple()) * 1000)
+            axis_name = meta["axis"]
 
+            # controllo presenta timestamp
+            match = re.search(r'(\d{2}_\d{2}_\d{4}_\d{2}_\d{2}_\d{2})', filename)
+
+            if match:
+                dt_str = match.group(1)
+                timestamp_base = datetime.strptime(dt_str, '%d_%m_%Y_%H_%M_%S')
+            else:
+                # fallback: uso timestamp di metadata + data odierna
+                date_today = datetime.now().strftime('%d_%m_%Y')
+                timestamp_base = datetime.strptime(f"{date_today} {meta['timestamp']}", "%d_%m_%Y %H:%M:%S")
+
+            utime_base_ms = int(time.mktime(timestamp_base.timetuple()) * 1000)
+            
+            # Recupero res fft specifici per asse
+            current_axis_fft = fft_result.get(axis_name, {})
             # --- Calcoli Fisici (RMS e Angoli) ---
             m1, m2, m3 = summ["rms_x"], summ["rms_y"], summ["rms_z"]
             accrms = sqrt(m1**2 + m2**2 + m3**2)
@@ -65,7 +79,7 @@ class InfluxHandler:
             ).format(
                 addr=addr, axis=meta["axis"], temp=summ["temperature"],
                 rx=m1, ry=m2, rz=m3, phi=phi, theta=theta,
-                pf=fft_result.get('peak_freq', -1), mm=fft_result.get('max_mag', -1),
+                pf=current_axis_fft.get('peak_freq', -1), mm=current_axis_fft.get('max_mag', -1),
                 ar=meta["sensitivity"], sync=meta["is_synced"], utime=utime_base_ms
             )
 

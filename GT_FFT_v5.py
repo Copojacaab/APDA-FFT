@@ -261,37 +261,44 @@ class Gateway:
         """
 
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Syncronization request\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        if addr not in self.device_dict: 
+
+        if addr not in self.device_dict:
             self.update_device_file(addr)
 
+        # Recupero stato del dispositivo, configurazione e controllo integrita
         device_status = self.check_device(payload)
         config_status = self.send_config(addr)
         checkF_status = self.check_files(addr, 0)
 
         # --- NUOVA LOGICA PER LOG PICCHI MULTIPLI ---
-        current_fft = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
+        current_fft_data = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
 
-        peaks_list = []
-        i = 1
-        # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
-        while f'peak_freq_{i}' in current_fft:
-            freq = current_fft[f'peak_freq_{i}']
-            mag = current_fft[f'max_mag_{i}']
-            peaks_list.append(f"f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
-            i += 1
+        peaks_summary = []
+        total_proc_time = 0
+        max_ram = 0
 
-        if peaks_list:
-            fft_dict = "Peaks: " + " | ".join(peaks_list) + "\n"
-        else:
-            fft_dict = "Peaks: None or FFT not run\n"
-        # --------------------------------------------
+        # Ciclo su ogni asse analizzato
+        for axis_name, axis_result in current_fft_data.items():
+            axis_peaks = []
+            i=1
+            # estrazione iterativa di tutti i picchi
+            while f'peak_freq_{i}' in axis_result:
+                freq = axis_result[f'peak_freq_{i}']
+                mag = axis_result[f'max_mag_{i}']
+                axis_peaks.append(f"f{i}:{freq: .4f}Hz({mag: .2f})")
+                i += 1
 
-        process_time_cpu = current_fft.get('process_time', -1)
-        wall_time_cpu = current_fft.get('wall_time', -1)
-        percentage_cpu = current_fft.get('percentage_cpu', -1)
-        peak_memrss = current_fft.get('memrss', -1)
-
-        sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}\n"
+            if axis_peaks:
+                peaks_summary.append(f"[{axis_name}: " + ",".join(axis_peaks) + "]")
+            
+            # metriche di sistema (somma tempi e picco ram)
+            total_proc_time += axis_result.get('process_time', 0)
+            max_ram = max(max_ram, axis_result.get('memrss', 0))
+        
+        # Formattazione stringhe per i log
+        fft_log_str = "Peaks --> " + " | ".join(peaks_summary) if peaks_summary else "Peaks: None or FFT not run"
+        sys_monitor_str = f"Total Proc Time: {total_proc_time: .2f}s, Max RAM: {max_ram: .2f}kB"
+        #-------------------------------------------------
 
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
@@ -303,10 +310,12 @@ class Gateway:
         server_status = self.send_file_to_server(addr)
 
         # Scrittura nel log
-        self.append_history("\t" + device_status + "\t" + fft_dict + "\t" + sys_monitor + "\t" + config_status + "\n")
+        self.append_history(f"\t{device_status.strip()}\n\t{fft_log_str}\n\t{sys_monitor_str}\n\t{config_status}")
+
         if server_status != '':
             self.append_history("\t" + server_status + "\n")
 
+        # cleanup dei dati FFT per il sensore
         if addr in self.fft_dict:
             self.fft_dict.pop(addr)
 
@@ -390,6 +399,7 @@ class Gateway:
         # Gestione errori pkg stream
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
+
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
@@ -452,6 +462,11 @@ class Gateway:
         # 2. Scrittura dati
         self._process_stream_data(payload[11:], addr, first_value=0, is_append=True)
 
+        # Inserisco nelle code di invi
+        file2send = filename.replace(self.DATA_DIR, '')
+        self.file2s_influx_dict.setdefault(addr, []).append(file2send)
+        self.file2s_dict_ftp.setdefault(addr, []).append(file2send)
+
         # 3. Cleanup: rimuovo dalla gestione stream il file (autoconclusivo)
         self.open_file_dict.pop(addr, None)
         self.file2s_dict_ftp.setdefault(addr, []).append(filename.replace(self.DATA_DIR, ''))       #inserisce nella coda FTP
@@ -473,30 +488,32 @@ class Gateway:
         filename =  f"{self.DATA_DIR}{addr}_{date_time}_shock.log"
         
         self.open_file_dict[addr] = filename
+
         # 1. Scrittura header
         with open(filename, 'w+') as f:
-            f.write(header["time"] + ';')
+            f.write(f"{header['time']};2g;100Hz;Unknown_axis; \n")  # Riga 0: Header
+            f.write("Asynced;\n")                                   # Riga 1: Sync
+            f.write("0;0;0;0;\n")                                   # Riga 2: Summary (Temp, RMS)
+            f.write("0;0;0;\n")                                     # Riga 3: First Values
 
         # 2. Decoding e scrittura su file
         self._process_stream_data(payload[4:], addr, first_value=0, is_append=True)
 
-        # 3. Invio immediato al server per dati di shock
+        # 3. Aggiunta dei file alle code
+        file2send = filename.replace(self.DATA_DIR, '')
+
+        self.file2s_dict_ftp.setdefault(addr, []).append(file2send)
+        self.file2s_influx_dict.setdefault(addr, []).append(file2send)
+
+        # 5. Invio influx
+        self.send_file_to_influx(addr)
+        
+        # 6. Invio server FTP
         server_status = self.send_file_to_server(addr)
         self.append_history("\t" + server_status + "\n")
 
-        # 2. Scrittura su file
-        # with open(filename, 'w+') as f:
-        #     f.write(header["time"] + ';')
-        #     shock_data = ProtocolDecoder.decode_samples(payload[4:], 0)
-        #     for c in shock_data:
-        #         f.write(c + ';')
-
-        # file2send = filename.replace( self.DATA_DIR, '')
-        # if file2send:  
-        #     if addr in self.file2s_dict_ftp:
-        #         self.file2s_dict_ftp[addr].append(file2send)
-        #     else:
-        #         self.file2s_dict_ftp[addr] = [file2send]
+        self.open_file_dict.pop(addr, None)
+        self.first_data_dict.pop(addr, None)
 
     
     def process_unknown_data(self, payload, addr):
@@ -566,10 +583,12 @@ class Gateway:
         try:
             start_cpu = time.process_time()                                 #snapshot iniziale CPU e tempo reale
             start_wall = time.perf_counter()
+
             # 1. caricamento dati
             data_loaded = load_sensor(log_file_path)
             samples = data_loaded["samples"]
             fs = data_loaded["metadata"]["fs"]
+            axis = data_loaded["metadata"]["axis"]
             
             if(len(samples) > 0):
                 res_fft = start_fft(samples, fs)                           # risultati fft
@@ -581,19 +600,22 @@ class Gateway:
             elif not self.is_flexibile_structure:
                 peaks = get_top_peaks_resolution(res_fft, fs)
             
+            if addr not in self.fft_dict:
+                self.fft_dict[addr] = {}
+
             # init del dizionario per id di sensore
-            self.fft_dict[addr] ={
+            self.fft_dict[addr][axis] ={
                 'peak_freq': -1, 'max_mag': -1,
                 'process_time': -1, 'wall_time': -1,
                 'percentage_cpu': -1, 'memrss': -1
             }
 
             if peaks:
-                self.fft_dict[addr]['peak_freq'] = peaks[0]['freq']
-                self.fft_dict[addr]['max_mag'] = peaks[0]['mag']
+                self.fft_dict[addr][axis]['peak_freq'] = peaks[0]['freq']
+                self.fft_dict[addr][axis]['max_mag'] = peaks[0]['mag']
                 for i,p in enumerate(peaks):
-                    self.fft_dict[addr][f'peak_freq_{i+1}'] = p['freq']
-                    self.fft_dict[addr][f'max_mag_{i+1}'] = p['mag']
+                    self.fft_dict[addr][axis][f'peak_freq_{i+1}'] = p['freq']
+                    self.fft_dict[addr][axis][f'max_mag_{i+1}'] = p['mag']
             else:
                 print(f"\t[WARNING] nessun campione nel file per FFT per sensore {addr}")
             
@@ -607,10 +629,10 @@ class Gateway:
             
             mem_peal = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             
-            self.fft_dict[addr]["process_time"] = cpu_delta
-            self.fft_dict[addr]["wall_time"] = wall_delta
-            self.fft_dict[addr]["percentage_cpu"] = cpu_percent
-            self.fft_dict[addr]["memrss"] = mem_peal
+            self.fft_dict[addr][axis]["process_time"] = cpu_delta
+            self.fft_dict[addr][axis]["wall_time"] = wall_delta
+            self.fft_dict[addr][axis]["percentage_cpu"] = cpu_percent
+            self.fft_dict[addr][axis]["memrss"] = mem_peal
 
         except Exception as e:
             print(f"\t[ERROR] Errore durante FFT: {str(e)}\n")
@@ -765,8 +787,6 @@ class Gateway:
 
             self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
 
-            address = address.lower().replace("-", "").strip()
-            
             self.check_device_config()
             self.process_data(payload, address)
         except Exception as e:
