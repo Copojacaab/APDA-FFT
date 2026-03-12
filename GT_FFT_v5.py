@@ -25,7 +25,8 @@ from utils.get_peak_resolution import get_top_peaks_resolution
 from utils.get_peak_prominence import get_top_peaks_prominence
 
 from utils.ftp_manager import FTPClient
-from utils.influxdb_manager import InfluxHandler
+# from utils.influxdb_manager import InfluxHandler
+from utils.fastapi_manager import FastAPIHandler
 from protocol_decoder import ProtocolDecoder
 from protocol_radio import XBeeManager
 
@@ -47,7 +48,8 @@ class Gateway:
 
         # 2. coda di invio
         self.file2s_dict_ftp = {}                           #file da inviare al server
-        self.file2s_influx_dict = {}                        #file da inviare a influx
+        # self.file2s_influx_dict = {}                        #file da inviare a influx
+        self.file2s_fastapi_dict = {}
 
         # 3. gestione stream e buffer
         self.open_file_dict = {}                           #file aperti
@@ -56,7 +58,7 @@ class Gateway:
         
         # 4. variabilli di servizio
         self.original_payload = None
-        self.delay = 0
+        self.delay = 2
         self.delay_time = 0
         self.t = datetime.now()
 
@@ -72,12 +74,15 @@ class Gateway:
             local_dir = self.DATA_DIR
         )
         
-        self.influx_handler = InfluxHandler(
-            url=self.influx_url,
-            token=self.influx_token,
-            local_dir= self.DATA_DIR
-        )
+        # self.influx_handler = InfluxHandler(
+        #     url=self.influx_url,
+        #     token=self.influx_token,
+        #     local_dir= self.DATA_DIR
+        # )
 
+        self.fastapi_handler = FastAPIHandler(
+            url = self.fastapi_url
+        )
         # 7. creo istanza modulo di connessione radio con i sensori
         self.xbee = XBeeManager(timeout=5)
 
@@ -116,8 +121,11 @@ class Gateway:
                 self.server_path = config['ftp']['path']
                 
                 # parametri influx
-                self.influx_url = config['influxdb']['url']
-                self.influx_token = config['influxdb']['token']
+                # self.influx_url = config['influxdb']['url']
+                # self.influx_token = config['influxdb']['token']
+
+                # parametri fastapi
+                self.fastapi_url = config['fastapi']['url']
                 
                 # percorsi file e impostazioni gateway
                 self.logger_file = config['gateway']['logger_file']
@@ -307,8 +315,17 @@ class Gateway:
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
 
+        # INVIO ALLE PIATTAFORME
+        # FastAPI
+        self.fastapi_handler.upload_file(
+            addr=addr,
+            files_to_send=self.file2s_fastapi_dict.get(addr, []),
+            local_dir=self.DATA_DIR,
+            fft_result=self.fft_dict.get(addr, {}),
+            logger_callback=self.append_history
+        )
         # manda i file accumulati a influx
-        self.send_file_to_influx(addr)
+        # self.send_file_to_influx(addr)
         
         # invio al server ftp
         server_status = self.send_file_to_server(addr)
@@ -403,7 +420,9 @@ class Gateway:
         payload data, and managing dictionaries related to file handling and data
         """
         self.append_history('%d/%d/%d, %d:%d:%d, %s - End data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
+
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
         if checkF_status != '':
@@ -413,6 +432,7 @@ class Gateway:
                 self.file2s_dict_ftp[addr] = [filename]
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
@@ -432,12 +452,10 @@ class Gateway:
 
             self.work_flow_fft(addr, full_path)
 
-            # aggiunta alla coda influxdb
+            # aggiunta alla coda influxdb e fastapi
             if checkF_status == '':
-                if addr in self.file2s_influx_dict:
-                    self.file2s_influx_dict[addr].append(file2send)
-                else:
-                    self.file2s_influx_dict[addr] = [file2send]
+                self.file2s_fastapi_dict[addr].append(file2send)
+
         else:
             self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
 
@@ -574,8 +592,6 @@ class Gateway:
             
             if(len(samples) > 0):
                 res_fft = start_fft(samples, fs)                            # risultati fft
-            else:
-                print(f"\t[WARNING] Nessun campione nel file per FFT")
 
             if self.is_flexibile_structure:
                 peaks = get_top_peaks_prominence(res_fft, fs)
@@ -710,29 +726,30 @@ class Gateway:
             - per ogni file che trova chiama la worker create_influx_line_protocol
             - log e pulizia
     """
-    def send_file_to_influx(self, addr):
+    # def send_file_to_influx(self, addr):
 
-        """
-        Trasmette i dati a InfluxDB.
-        Se l'upload ha successo, cancella i file locali.
-        """
+    #     """
+    #     Trasmette i dati a InfluxDB.
+    #     Se l'upload ha successo, cancella i file locali.
+    #     """
         
-        current_fft_res = self.fft_dict.get(addr, {})
+    #     current_fft_res = self.fft_dict.get(addr, {})
 
-        if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
-            try:
-                self.influx_handler.upload_influx_data(
-                    addr=addr,
-                    files_to_send=self.file2s_influx_dict[addr],
-                    fft_result=current_fft_res,
-                    logger_callback=self.append_history
-                )
+    #     if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
+    #         try:
+    #             self.influx_handler.upload_influx_data(
+    #                 addr=addr,
+    #                 files_to_send=self.file2s_influx_dict[addr],
+    #                 fft_result=current_fft_res,
+    #                 logger_callback=self.append_history
+    #             )
                 
-                # Se upload riuscito (pulizia file in ftp_manager)
-                self.file2s_influx_dict[addr] = []  # Svuota la coda
+    #             # Se upload riuscito (pulizia file in ftp_manager)
+    #             self.file2s_influx_dict[addr] = []  # Svuota la coda
                 
-            except Exception as e:
-                self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
+    #         except Exception as e:
+    #             self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
+
 
     # Scrive una stringa nel file "history.log".
     def append_history(self, stringa):
