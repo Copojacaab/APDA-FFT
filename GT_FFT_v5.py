@@ -739,14 +739,14 @@ class Gateway:
             - per ogni file che trova chiama la worker create_influx_line_protocol
             - log e pulizia
     """
-    def send_file_to_influx(self, addr):
+    # def send_file_to_influx(self, addr):
 
-        """
-        Trasmette i dati a InfluxDB.
-        Se l'upload ha successo, cancella i file locali.
-        """
+    #     """
+    #     Trasmette i dati a InfluxDB.
+    #     Se l'upload ha successo, cancella i file locali.
+    #     """
         
-        current_fft_res = self.fft_dict.get(addr, {})
+    #     current_fft_res = self.fft_dict.get(addr, {})
 
     #     if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
     #         try:
