@@ -39,11 +39,17 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
         # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
+
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
             int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
             int(t.microsecond / 1000), delay
         )
+
         return 'a1' + ts_part
 
     @staticmethod
@@ -54,18 +60,20 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
-        # 0. Parte comune di timestamp e sync
-        ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
-            int(t.microsecond / 1000), delay
-        )
         # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
         #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
         #     int(t.microsecond / 1000), delay
         # )
 
+        # 0. Parte comune di timestamp e sync
+        ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(t.microsecond / 1000), delay
+        )
+
+
         param = config_str.split(' ')
-        if len(param) < 17:                     #fallback a sync se parametri insufficienti
+        if len(param) < 17:                     #fallback a sync1 se parametri insufficienti
             return 'a1' + ts_part
 
         # Configurazione SHM
@@ -109,8 +117,17 @@ class ProtocolDecoder:
     def decode_float_v2(high_byte, low_byte):
         """
             Decodifica due byte (high_byte e low_byte) in un valore floating-point a 16 bit.
+
+            Esempio:
+                se il sensore invia il pacchetto numero 513 (0x0201):
+                    -p[1] = 0x02 (dec: 2)
+                    -p[2] = 0x01 (dec: 1)
+                - p[1] << 8 = 2 << 8 = 512
+                => (p[1] << 8) | p[2] = 512 | 1 = 513    
+
         """
-        # Mask per estrazione esponente, mantissa e segno
+
+        # Maschere per estrazione esponente, mantissa e segno
         exp_mask, sign_mask, mantissa_mask = 0x7C00, 0x8000, 0x03FF
 
         small_number = 0.00006103515
@@ -173,7 +190,9 @@ class ProtocolDecoder:
 
     @staticmethod
     def parse_start_header(p):
-        
+        """
+            Traduce l'header del pacchetto 0xD1 (start stream) in list(str)        
+        """
         fx = ctypes.c_int32(ctypes.c_uint32(p[11]<<24|p[12]<<16|p[13]<<8|p[14]).value).value / 10000000.0
         fy = ctypes.c_int32(ctypes.c_uint32(p[15]<<24|p[16]<<16|p[17]<<8|p[18]).value).value / 10000000.0
         fz = ctypes.c_int32(ctypes.c_uint32(p[19]<<24|p[20]<<16|p[21]<<8|p[22]).value).value / 10000000.0
