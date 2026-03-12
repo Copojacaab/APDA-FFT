@@ -81,8 +81,8 @@ class XBeeManager:
         """
             Invia il payload al sensore con l'indirizzo MAC specificatos
             
-        :param addr: MAC address sensore
-        :param hex_payload: payload da inviare
+            :param addr: MAC address sensore
+            :param hex_payload: payload da inviare
         """
         try:
             remote_device = self._get_remote_device(addr)
