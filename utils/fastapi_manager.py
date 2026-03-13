@@ -4,7 +4,7 @@ import urllib.error
 import os
 import re
 from datetime import datetime
-from math import degrees, atan2, sqrt, acos
+from math import degrees, atan2, acos
 from utils.load_data import load_sensor
 
 
@@ -80,7 +80,7 @@ class FastAPIHandler:
                     )
                     with urllib.request.urlopen(req, timeout=40) as response:
                         if response.status == 200:
-                            logger_callback(f"[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
+                            logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             files_to_send.remove(filemame)
                 except Exception as e:
-                    logger_callback(f"[FastAPI][ERRORE] {str(e)}")
+                    logger_callback(f"\t[FastAPI][ERRORE] {str(e)}")
