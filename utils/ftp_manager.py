@@ -13,7 +13,7 @@ class FTPClient:
         # Spedisce la lista di file al server e pulisce la cartella locale
         
         try: 
-            logger_callback(f"\t [FTP] Tentativo di connessione a {self.server}...\n")
+            logger_callback(f"\t[FTP] Tentativo di connessione a {self.server}...\n")
             if not files_to_send:
                 return ""
             
@@ -59,4 +59,4 @@ class FTPClient:
             
             return status
         except Exception as e:
-            logger_callback(f"\t [FTP-ERROR] Errore: {str(e)}")
+            logger_callback(f"\t[FTP-ERROR] Errore: {str(e)}")
