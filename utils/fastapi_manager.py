@@ -4,7 +4,7 @@ import urllib.error
 import os
 import re
 from datetime import datetime
-from math import degrees, atan2, sqrt, acos
+from math import degrees, atan2, acos
 from utils.load_data import load_sensor
 
 
@@ -24,6 +24,8 @@ class FastAPIHandler:
         samples = data['samples']
 
         axis = meta['axis'].replace("_axis", "").replace("axis", "").strip()
+        fs_value = meta['fs']
+        sensitivity = meta['sensitivity']
 
         # gestione timestamp con regex
         match = re.search(r'(\d{2}_\d{2}_\d{4}_\d{2}_\d{2}_\d{2})', filename)
@@ -44,9 +46,11 @@ class FastAPIHandler:
 
         # payload
         return {
-            "sensore_id": addr,
+            "mac": addr,
             "timestamp": ts.isoformat(),
             "asse": axis,
+            "fs": fs_value,
+            "sensitivity": sensitivity,
             "metriche": {
                 "temp": summ['temperature'],
                 "humidity": summ.get("humidity", 0.0),
@@ -80,7 +84,7 @@ class FastAPIHandler:
                     )
                     with urllib.request.urlopen(req, timeout=40) as response:
                         if response.status == 200:
-                            logger_callback(f"[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
+                            logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             files_to_send.remove(filemame)
                 except Exception as e:
                     logger_callback(f"[FastAPI][ERRORE] {str(e)}")
