@@ -87,4 +87,4 @@ class FastAPIHandler:
                             logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             files_to_send.remove(filemame)
                 except Exception as e:
-                    logger_callback(f"[FastAPI][ERRORE] {str(e)}")
+                    logger_callback(f"\t[FastAPI][ERRORE] {str(e)}")
