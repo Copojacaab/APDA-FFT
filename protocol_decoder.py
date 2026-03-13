@@ -39,16 +39,16 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
-        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
-        #     int(t.microsecond / 1000), delay
-        # )
-        # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
-
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
             int(t.microsecond / 1000), delay
         )
+
+        # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
 
         return 'a1' + ts_part
 
@@ -60,16 +60,16 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
-        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
-        #     int(t.microsecond / 1000), delay
-        # )
-
-        # 0. Parte comune di timestamp e sync
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
             int(t.microsecond / 1000), delay
         )
+
+        # 0. Parte comune di timestamp e sync
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
 
 
         param = config_str.split(' ')

@@ -63,7 +63,8 @@ class XBeeManager:
             remote_device = xbee_message.remote_device
 
             # estrazione indirizzo MAC 
-            addr = str(remote_device).lower()
+            # In receive_data
+            addr = str(remote_device).lower().replace("-", "").strip()
 
             # salvo/aggiorno il dispositivo nella rubrica
             self._known_devices[addr] = remote_device

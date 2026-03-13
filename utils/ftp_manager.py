@@ -25,13 +25,13 @@ class FTPClient:
             - status: stringa errore o vuota se ok
     """
     def upload_files(self, addr, files_to_send, logger_callback):
-        
-        
-        try: 
-            logger_callback(f"\t [FTP] Tentativo di connessione a {self.server}...\n")
+
+
+        try:
+            logger_callback(f"\t[FTP] Tentativo di connessione a {self.server}...\n")
             if not files_to_send:
                 return ""
-            
+
             status = ""
             try:
                 # Apro la sessione e mi connetto
@@ -62,7 +62,7 @@ class FTPClient:
                         
                     # Se l'upload è andato, cancello il file locale per non ingolfare il GW
                     os.remove(full_local_path)
-                    logger_callback(f"[FTP] File {filename} trasferito e rimosso correttamente\n")
+                    logger_callback(f"\t[FTP] File {filename} trasferito e rimosso correttamente\n")
                     
                     files_to_send.pop(0)
                 

@@ -55,8 +55,8 @@ class Gateway:
         
         # 4. variabilli di servizio
         self.original_payload = None
-        self.delay = 2
-        self.delay_time = 0
+        self.delay = 0
+        self.delay_time = 2
         self.t = datetime.now()
 
         # 5. caricamento config
@@ -279,6 +279,8 @@ class Gateway:
         if addr not in self.device_dict: 
             self.update_device_file(addr)
 
+        if addr not in self.file2s_fastapi_dict:
+            self.file2s_fastapi_dict[addr] = []
         device_status = self.check_device(payload)
         config_status = self.send_config(addr)
         checkF_status = self.check_files(addr, 0)
@@ -436,7 +438,7 @@ class Gateway:
 
             # aggiunta alla coda influxdb e fastapi
             if checkF_status == '':
-                self.file2s_fastapi_dict[addr].append(file2send)
+                self.file2s_fastapi_dict.setdefault(addr, []).append(file2send)
 
         else:
             self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
@@ -777,7 +779,6 @@ class Gateway:
     # def decode_payload(self, cut_payload, first):
 
 
-
     def main(self):
         try:
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
@@ -786,6 +787,8 @@ class Gateway:
                 return
             self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
 
+            # Pulizia address
+            
             self.check_device_config()
             self.process_data(payload, address)
         except Exception as e:
