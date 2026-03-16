@@ -55,10 +55,12 @@ class FTPClient:
                     logger_callback(f"\t[FTP] File {filename} trasferito con successo\n")
                 except Exception as e:
                     logger_callback(f"[FTP] Errore su {filename}: {str(e)}\n")
+                    return []
 
             session.close()
         except Exception as e:
             status = str(e)
             logger_callback(f"\t[FTP] Errore durante l'upload per {addr}: {status}")
+            return []
         
         return uploaded_successfully

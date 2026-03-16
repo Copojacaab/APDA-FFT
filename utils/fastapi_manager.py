@@ -87,11 +87,12 @@ class FastAPIHandler:
                         headers={'Content-Type': 'application/json'},
                         method='POST'
                     )
-                    with urllib.request.urlopen(req, timeout=40) as response:
+                    with urllib.request.urlopen(req, timeout=60) as response:
                         if response.status == 200:
                             logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             uploaded_successfully.append(filemame)
                 except Exception as e:
                     logger_callback(f"\t[FastAPI][ERRORE] {str(e)}")
+                    return []
                     
         return uploaded_successfully

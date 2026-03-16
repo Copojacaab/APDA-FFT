@@ -323,6 +323,11 @@ class Gateway:
         except Exception as e:
             self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
         
+        if success_fastapi is None:
+            success_fastapi = []
+        if success_ftp is None:
+            success_ftp = []
+            
         # aggiornamento delle code rimuovendo solamente i successi
         for file in success_fastapi: 
             if file in pending_fastapi:
@@ -609,6 +614,8 @@ class Gateway:
 
             # 1. caricamento dati
             data_loaded = load_sensor(log_file_path)
+            if data_loaded is None:
+                self.append_history(f"\t[WARN] File {log_file_path} corrotto o incompleto, salto FFT\n")
             samples = data_loaded["samples"]
             fs = data_loaded["metadata"]["fs"]
             axis = data_loaded["metadata"]["axis"]
