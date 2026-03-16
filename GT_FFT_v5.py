@@ -9,8 +9,8 @@ import json
 from math import degrees, atan2, sqrt, acos
 import urllib.request
 import urllib.error
-
-
+import threading
+import queue
 
 """
 ============================================
@@ -70,16 +70,13 @@ class Gateway:
             path=self.server_path,
             local_dir = self.DATA_DIR
         )
-        
-        # self.influx_handler = InfluxHandler(
-        #     url=self.influx_url,
-        #     token=self.influx_token,
-        #     local_dir= self.DATA_DIR
-        # )
 
         self.fastapi_handler = FastAPIHandler(
             url = self.fastapi_url
         )
+
+        self.upload_lock = threading.Lock()
+        self.history_lock = threading.Lock()
         # 7. creo istanza modulo di connessione radio con i sensori
         self.xbee = XBeeManager(timeout=5)
 
@@ -104,11 +101,61 @@ class Gateway:
             self.xbee.stop(self.append_history)
 
     # HELPER FUNCTIONS
-    def _background_upload_task(self, addr):
+    def _background_upload_task(self, addr,device_status, sys_monitor, config_status, fft_dict):
         """
             Funzione che gira in parallelo, timeout di 120 secondi
             senza bloccare la ricezione radio dei sensori
         """
+                # 4. GESTIONE UPLOAD
+        pending_fastapi = self.file2s_fastapi_dict.get(addr, [])
+        pending_ftp = self.file2s_dict_ftp.get(addr, [])
+        success_fastapi = []
+        success_ftp = []
+        try:
+            # FastAPI
+            success_fastapi = self.fastapi_handler.upload_file(
+                addr=addr,
+                files_to_send=pending_fastapi,
+                local_dir=self.DATA_DIR,
+                fft_result=self.fft_dict.get(addr, {}),
+                logger_callback=self.append_history
+            )
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
+        try:
+            # FTP
+            success_ftp = self.send_file_to_server(addr)
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
+        
+        if success_fastapi is None:
+            success_fastapi = []
+        if success_ftp is None:
+            success_ftp = []
+
+        # aggiornamento delle code rimuovendo solamente i successi
+        for file in success_fastapi: 
+            if file in pending_fastapi:
+                pending_fastapi.remove(file)
+        for file in success_ftp:
+            if file in pending_ftp:
+                pending_ftp.remove(file)
+
+        # Cleaup:
+        # file rimosso solo e non e' in nessuna coda
+        files_on_disk = os.listdir(self.DATA_DIR)
+        for filename in files_on_disk:
+            if filename.startswith(addr) and filename.endswith(".log"):
+                if filename not in pending_ftp:
+                    try:
+                        os.remove(os.path.join(self.DATA_DIR, filename))
+                    except Exception as e:
+                        self.append_history(f"\t[ERROR] Cleanup fallito per {filename}: {str(e)}")
+        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
+        self.append_history(full_log_entry)
+
+        
+        self.fft_dict.pop(addr, None)
     def load_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"): 
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
@@ -302,60 +349,11 @@ class Gateway:
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 
-        # checkF_status = self.check_files(addr, 0)
-        # if checkF_status != '':
-        #     self.append_history("\t" + checkF_status + "\n")
+        upload_thread = threading.Thread(target=self._background_upload_task, args=(addr, device_status, sys_monitor, config_status, fft_dict))
+        upload_thread.daemon = True
+        upload_thread.start()
 
-        # 4. GESTIONE UPLOAD
-        pending_fastapi = self.file2s_fastapi_dict.get(addr, [])
-        pending_ftp = self.file2s_dict_ftp.get(addr, [])
-        success_fastapi = []
-        success_ftp = []
-        try:
-            # FastAPI
-            success_fastapi = self.fastapi_handler.upload_file(
-                addr=addr,
-                files_to_send=pending_fastapi,
-                local_dir=self.DATA_DIR,
-                fft_result=self.fft_dict.get(addr, {}),
-                logger_callback=self.append_history
-            )
-        except Exception as e:
-            self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
-        try:
-            # FTP
-            success_ftp = self.send_file_to_server(addr)
-        except Exception as e:
-            self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
-        
-        if success_fastapi is None:
-            success_fastapi = []
-        if success_ftp is None:
-            success_ftp = []
-
-        # aggiornamento delle code rimuovendo solamente i successi
-        for file in success_fastapi: 
-            if file in pending_fastapi:
-                pending_fastapi.remove(file)
-        for file in success_ftp:
-            if file in pending_ftp:
-                pending_ftp.remove(file)
-
-        # Cleaup:
-        # file rimosso solo e non e' in nessuna coda
-        files_on_disk = os.listdir(self.DATA_DIR)
-        for filename in files_on_disk:
-            if filename.startswith(addr) and filename.endswith(".log"):
-                if filename not in pending_ftp:
-                    try:
-                        os.remove(os.path.join(self.DATA_DIR, filename))
-                    except Exception as e:
-                        self.append_history(f"\t[ERROR] Cleanup fallito per {filename}: {str(e)}")
-        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
-        self.append_history(full_log_entry)
-
-        
-        self.fft_dict.pop(addr, None)
+        return config_status
 
 
 
@@ -807,28 +805,29 @@ class Gateway:
             Controlla che il .log non superi la dimensione massima fissata.
             Se super max_kb fa un rewrite
         """
-        try:
-            # Recupero il percorso al file
-            log_path = self.logger_file
+        with self.history_lock:
+            try:
+                # Recupero il percorso al file
+                log_path = self.logger_file
 
-            if os.path.exists(log_path):
-                file_size_kb = os.path.getsize(log_path) / 1024
-            
-                if file_size_kb > max_kb:
-                    # LOG ROTATION
-                    old_log = log_path + ".old"
-                    if os.path.exists(old_log):
-                        os.remove(old_log)
-                    os.rename(log_path, old_log)
+                if os.path.exists(log_path):
+                    file_size_kb = os.path.getsize(log_path) / 1024
+                
+                    if file_size_kb > max_kb:
+                        # LOG ROTATION
+                        old_log = log_path + ".old"
+                        if os.path.exists(old_log):
+                            os.remove(old_log)
+                        os.rename(log_path, old_log)
 
-                    # Apro in modalita write invece di append
-                    with open(log_path, 'w') as f:
-                        f.write(f"--- LOG ROTATION: {datetime.now()} ---\n")
+                        # Apro in modalita write invece di append
+                        with open(log_path, 'w') as f:
+                            f.write(f"--- LOG ROTATION: {datetime.now()} ---\n")
 
-            with open(self.logger_file, 'a') as f:
-                    f.write(stringa)
-        except Exception as e:
-            print(f"[CRICAL] Log Error: {str(e)}")
+                with open(self.logger_file, 'a') as f:
+                        f.write(stringa)
+            except Exception as e:
+                print(f"[CRICAL] Log Error: {str(e)}")
 
         
 
