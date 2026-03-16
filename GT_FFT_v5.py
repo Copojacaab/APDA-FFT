@@ -104,6 +104,11 @@ class Gateway:
             self.xbee.stop(self.append_history)
 
     # HELPER FUNCTIONS
+    def _background_upload_task(self, addr):
+        """
+            Funzione che gira in parallelo, timeout di 120 secondi
+            senza bloccare la ricezione radio dei sensori
+        """
     def load_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"): 
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
@@ -327,7 +332,7 @@ class Gateway:
             success_fastapi = []
         if success_ftp is None:
             success_ftp = []
-            
+
         # aggiornamento delle code rimuovendo solamente i successi
         for file in success_fastapi: 
             if file in pending_fastapi:
@@ -341,7 +346,7 @@ class Gateway:
         files_on_disk = os.listdir(self.DATA_DIR)
         for filename in files_on_disk:
             if filename.startswith(addr) and filename.endswith(".log"):
-                if filename not in pending_fastapi and filename not in pending_ftp:
+                if filename not in pending_ftp:
                     try:
                         os.remove(os.path.join(self.DATA_DIR, filename))
                     except Exception as e:
