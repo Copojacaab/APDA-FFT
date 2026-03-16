@@ -72,13 +72,12 @@ class FastAPIHandler:
         if not files_to_send:
             return
 
+        uploaded_successfully = []
         for filemame in list(files_to_send):
             payload = self._prepare_payload(addr, filemame, local_dir, fft_result)
 
             if payload == "FILE NOT FOUND":
                 logger_callback(f"\t[FastAPI][WARN] File {filemame} rimosso\n")
-                # TEST: rimuovo il file dalla coda dei file da inviare
-                files_to_send.remove(filemame)
             if payload:
                 try:
                     data_json = json.dumps(payload).encode('utf-8')
@@ -91,6 +90,8 @@ class FastAPIHandler:
                     with urllib.request.urlopen(req, timeout=40) as response:
                         if response.status == 200:
                             logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
-                            files_to_send.remove(filemame)
+                            uploaded_successfully.append(filemame)
                 except Exception as e:
                     logger_callback(f"\t[FastAPI][ERRORE] {str(e)}")
+                    
+        return uploaded_successfully

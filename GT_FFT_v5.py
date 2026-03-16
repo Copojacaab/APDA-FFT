@@ -302,34 +302,50 @@ class Gateway:
         #     self.append_history("\t" + checkF_status + "\n")
 
         # 4. GESTIONE UPLOAD
+        pending_fastapi = self.file2s_fastapi_dict.get(addr, [])
+        pending_ftp = self.file2s_dict_ftp.get(addr, [])
+        success_fastapi = []
+        success_ftp = []
         try:
             # FastAPI
-            self.fastapi_handler.upload_file(
+            success_fastapi = self.fastapi_handler.upload_file(
                 addr=addr,
-                files_to_send=self.file2s_fastapi_dict.get(addr, []),
+                files_to_send=pending_fastapi,
                 local_dir=self.DATA_DIR,
                 fft_result=self.fft_dict.get(addr, {}),
                 logger_callback=self.append_history
             )
         except Exception as e:
             self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
-        
         try:
-            # invio al server ftp pulisce fisicamente file dal disco
-            server_status = self.send_file_to_server(addr)
+            # FTP
+            success_ftp = self.send_file_to_server(addr)
         except Exception as e:
-            server_status = f"Errore critico FTP: {str(e)}"
             self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
-
-        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
-        # Scrittura nel log
-        if server_status:
-            full_log_entry += f"[FTP] {server_status}"
         
+        # aggiornamento delle code rimuovendo solamente i successi
+        for file in success_fastapi: 
+            if file in pending_fastapi:
+                pending_fastapi.remove(file)
+        for file in success_ftp:
+            if file in pending_ftp:
+                pending_ftp.remove(file)
+
+        # Cleaup:
+        # file rimosso solo e non e' in nessuna coda
+        files_on_disk = os.listdir(self.DATA_DIR)
+        for filename in files_on_disk:
+            if filename.startswith(addr) and filename.endswith(".log"):
+                if filename not in pending_fastapi and filename not in pending_ftp:
+                    try:
+                        os.remove(os.path.join(self.DATA_DIR, filename))
+                    except Exception as e:
+                        self.append_history(f"\t[ERROR] Cleanup fallito per {filename}: {str(e)}")
+        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
         self.append_history(full_log_entry)
 
-        if addr in self.fft_dict:
-            self.fft_dict.pop(addr)
+        
+        self.fft_dict.pop(addr, None)
 
 
 
@@ -717,13 +733,8 @@ class Gateway:
                 files_to_send=self.file2s_dict_ftp[addr],
                 logger_callback=self.append_history
             )
-            
-            # se upload riuscito svuota la coda (pulizia file in ftp_manager)
-            if "OK" in result or "success" in result.lower():
-                self.file2s_dict_ftp[addr] = []  # Svuota la coda
-            
             return result
-        return ""
+        return []
 
 
 

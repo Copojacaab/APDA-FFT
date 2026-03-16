@@ -30,51 +30,35 @@ class FTPClient:
     def upload_files(self, addr, files_to_send, logger_callback):
         # Spedisce la lista di file al server e pulisce la cartella locale
         
-        try: 
-            logger_callback(f"\t[FTP] Tentativo di connessione a {self.server}...\n")
-            if not files_to_send:
-                return ""
+        uploaded_successfully = []
+        logger_callback(f"\t[FTP] Tentativo di connessione a {self.server}...\n")
+        if not files_to_send:
+            return ""
 
-            status = ""
-            try:
-                # Apro la sessione e mi connetto
-                session = ftplib.FTP()
-                session.connect(self.server, 21, 60.0)
-                session.login(self.user, self.pwd)
-                session.cwd(self.path)
+        status = ""
+        try:
+            # Apro la sessione e mi connetto
+            session = ftplib.FTP()
+            session.connect(self.server, 21, 60.0)
+            session.login(self.user, self.pwd)
+            session.cwd(self.path)
 
-                # Ciclo di invio sui file
-                while files_to_send:
-                    filename = files_to_send[0]
+            # Ciclo di invio sui file
+            for filename in list(files_to_send):
+                full_local_path = os.path.join(self.local_dir, filename)
 
-                    if not filename:
-                        logger_callback(f"\t[FTP] Nome file vuoto per {addr}, salto\n")
-                        files_to_send.pop(0)
-                        continue
-
-                    full_local_path = os.path.join(self.local_dir, filename)
-
-                    if not os.path.exists(full_local_path):
-                        logger_callback(f"\t[FTP] File {filename} non trovato in locale\n")
-                        files_to_send.pop(0)
-                        continue
-                        
-                    # INVIO EFFETTIVO
-                    with open(full_local_path, 'rb') as file:
-                        session.storbinary(f'STOR {filename}', file)
-                        
-                    # Se l'upload è andato, cancello il file locale per non ingolfare il GW
-                    os.remove(full_local_path)
-                    logger_callback(f"\t[FTP] File {filename} trasferito e rimosso correttamente\n")
+                try:
+                    with open(full_local_path, 'rb') as f:
+                        session.storbinary(f'STOR {filename}', f)
                     
-                    files_to_send.pop(0)
-                
-                session.close()
-                status=""
-            except Exception as e:
-                status = str(e)
-                logger_callback(f"\t[FTP] Errore durante l'upload per {addr}: {status}")
-            
-            return status
+                    uploaded_successfully.append(filename)
+                    logger_callback(f"\t[FTP] File {filename} trasferito con successo\n")
+                except Exception as e:
+                    logger_callback(f"[FTP] Errore su {filename}: {str(e)}\n")
+
+            session.close()
         except Exception as e:
-            logger_callback(f"\t[FTP-ERROR] Errore: {str(e)}")
+            status = str(e)
+            logger_callback(f"\t[FTP] Errore durante l'upload per {addr}: {status}")
+        
+        return uploaded_successfully
