@@ -1,7 +1,4 @@
-# The `Gateway` class is a Python program that handles data received from sensors, processes the data,
-# performs FFT analysis, sends data to InfluxDB and FTP server, and logs the process in a history
-# file.
-# coding=utf-8
+
 import os
 import cmath
 import ctypes
@@ -25,7 +22,8 @@ from utils.get_peak_resolution import get_top_peaks_resolution
 from utils.get_peak_prominence import get_top_peaks_prominence
 
 from utils.ftp_manager import FTPClient
-from utils.influxdb_manager import InfluxHandler
+# from utils.influxdb_manager import InfluxHandler
+from utils.fastapi_manager import FastAPIHandler
 from protocol_decoder import ProtocolDecoder
 from protocol_radio import XBeeManager
 
@@ -47,7 +45,8 @@ class Gateway:
 
         # 2. coda di invio
         self.file2s_dict_ftp = {}                           #file da inviare al server
-        self.file2s_influx_dict = {}                        #file da inviare a influx
+        # self.file2s_influx_dict = {}                        #file da inviare a influx
+        self.file2s_fastapi_dict = {}
 
         # 3. gestione stream e buffer
         self.open_file_dict = {}                           #file aperti
@@ -57,7 +56,7 @@ class Gateway:
         # 4. variabilli di servizio
         self.original_payload = None
         self.delay = 0
-        self.delay_time = 0
+        self.delay_time = 2
         self.t = datetime.now()
 
         # 5. caricamento config
@@ -72,12 +71,15 @@ class Gateway:
             local_dir = self.DATA_DIR
         )
         
-        self.influx_handler = InfluxHandler(
-            url=self.influx_url,
-            token=self.influx_token,
-            local_dir= self.DATA_DIR
-        )
+        # self.influx_handler = InfluxHandler(
+        #     url=self.influx_url,
+        #     token=self.influx_token,
+        #     local_dir= self.DATA_DIR
+        # )
 
+        self.fastapi_handler = FastAPIHandler(
+            url = self.fastapi_url
+        )
         # 7. creo istanza modulo di connessione radio con i sensori
         self.xbee = XBeeManager(timeout=5)
 
@@ -116,8 +118,11 @@ class Gateway:
                 self.server_path = config['ftp']['path']
                 
                 # parametri influx
-                self.influx_url = config['influxdb']['url']
-                self.influx_token = config['influxdb']['token']
+                # self.influx_url = config['influxdb']['url']
+                # self.influx_token = config['influxdb']['token']
+
+                # parametri fastapi
+                self.fastapi_url = config['fastapi']['url']
                 
                 # percorsi file e impostazioni gateway
                 self.logger_file = config['gateway']['logger_file']
@@ -261,61 +266,68 @@ class Gateway:
         """
 
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Syncronization request\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-
-        if addr not in self.device_dict:
+        if addr not in self.device_dict: 
             self.update_device_file(addr)
 
-        # Recupero stato del dispositivo, configurazione e controllo integrita
         device_status = self.check_device(payload)
         config_status = self.send_config(addr)
-        checkF_status = self.check_files(addr, 0)
 
         # --- NUOVA LOGICA PER LOG PICCHI MULTIPLI ---
-        current_fft_data = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
+        current_fft = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
 
-        peaks_summary = []
-        total_proc_time = 0
-        max_ram = 0
+        peaks_list = []
+        i = 1
+        # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
+        while f'peak_freq_{i}' in current_fft:
+            freq = current_fft[f'peak_freq_{i}']
+            mag = current_fft[f'max_mag_{i}']
+            peaks_list.append(f"f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
+            i += 1
 
-        # Ciclo su ogni asse analizzato
-        for axis_name, axis_result in current_fft_data.items():
-            axis_peaks = []
-            i=1
-            # estrazione iterativa di tutti i picchi
-            while f'peak_freq_{i}' in axis_result:
-                freq = axis_result[f'peak_freq_{i}']
-                mag = axis_result[f'max_mag_{i}']
-                axis_peaks.append(f"f{i}:{freq: .4f}Hz({mag: .2f})")
-                i += 1
+        if peaks_list:
+            fft_dict = "Peaks: " + " | ".join(peaks_list) + "\n"
+        else:
+            fft_dict = "Peaks: None or FFT not run\n"
+        # --------------------------------------------
 
-            if axis_peaks:
-                peaks_summary.append(f"[{axis_name}: " + ",".join(axis_peaks) + "]")
-            
-            # metriche di sistema (somma tempi e picco ram)
-            total_proc_time += axis_result.get('process_time', 0)
-            max_ram = max(max_ram, axis_result.get('memrss', 0))
+        process_time_cpu = current_fft.get('process_time', -1)
+        wall_time_cpu = current_fft.get('wall_time', -1)
+        percentage_cpu = current_fft.get('percentage_cpu', -1)
+        peak_memrss = current_fft.get('memrss', -1)
+
+        sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
+
+        # checkF_status = self.check_files(addr, 0)
+        # if checkF_status != '':
+        #     self.append_history("\t" + checkF_status + "\n")
+
+        # 4. GESTIONE UPLOAD
+        try:
+            # FastAPI
+            self.fastapi_handler.upload_file(
+                addr=addr,
+                files_to_send=self.file2s_fastapi_dict.get(addr, []),
+                local_dir=self.DATA_DIR,
+                fft_result=self.fft_dict.get(addr, {}),
+                logger_callback=self.append_history
+            )
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
         
-        # Formattazione stringhe per i log
-        fft_log_str = "Peaks --> " + " | ".join(peaks_summary) if peaks_summary else "Peaks: None or FFT not run"
-        sys_monitor_str = f"Total Proc Time: {total_proc_time: .2f}s, Max RAM: {max_ram: .2f}kB"
-        #-------------------------------------------------
+        try:
+            # invio al server ftp pulisce fisicamente file dal disco
+            server_status = self.send_file_to_server(addr)
+        except Exception as e:
+            server_status = f"Errore critico FTP: {str(e)}"
+            self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
 
-        if checkF_status != '':
-            self.append_history("\t" + checkF_status + "\n")
-
-        # manda i file accumulati a influx
-        self.send_file_to_influx(addr)
-        
-        # invio al server ftp
-        server_status = self.send_file_to_server(addr)
-
+        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
         # Scrittura nel log
-        self.append_history(f"\t{device_status.strip()}\n\t{fft_log_str}\n\t{sys_monitor_str}\n\t{config_status}")
+        if server_status:
+            full_log_entry += f"[FTP] {server_status}"
+        
+        self.append_history(full_log_entry)
 
-        if server_status != '':
-            self.append_history("\t" + server_status + "\n")
-
-        # cleanup dei dati FFT per il sensore
         if addr in self.fft_dict:
             self.fft_dict.pop(addr)
 
@@ -396,7 +408,6 @@ class Gateway:
 
         date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
 
-        # Gestione errori pkg stream
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
 
@@ -408,8 +419,6 @@ class Gateway:
                 self.open_file_dict[addr] = filename
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
-
-        # Estrazione dati
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
@@ -425,12 +434,10 @@ class Gateway:
 
             self.work_flow_fft(addr, full_path)         # start pipeline FFT
 
-            # aggiunta alla coda influxdb
+            # aggiunta alla coda influxdb e fastapi
             if checkF_status == '':
-                if addr in self.file2s_influx_dict:
-                    self.file2s_influx_dict[addr].append(file2send)
-                else:
-                    self.file2s_influx_dict[addr] = [file2send]
+                self.file2s_fastapi_dict.setdefault(addr, []).append(file2send)
+
         else:
             self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
 
@@ -591,7 +598,7 @@ class Gateway:
             axis = data_loaded["metadata"]["axis"]
             
             if(len(samples) > 0):
-                res_fft = start_fft(samples, fs)                           # risultati fft
+                res_fft = start_fft(samples, fs)                            # risultati fft
             else:
                 print(f"\t[WARNING] Nessun campione nel file per FFT")
 
@@ -738,32 +745,36 @@ class Gateway:
             except Exception as e:
                 self.append_history(f"\t[ERROR] Impossibile rimuovere {filename}: {str(e)}\n")
 
+    """
+        Gestore della coda: processa tutti i file in attesa per sensore
+            - verifica se in file2s_influx_dict ci sono file per l'invio
+            - per ogni file che trova chiama la worker create_influx_line_protocol
+            - log e pulizia
+    """
+    # def send_file_to_influx(self, addr):
 
+    #     """
+    #     Trasmette i dati a InfluxDB.
+    #     Se l'upload ha successo, cancella i file locali.
+    #     """
+        
+    #     current_fft_res = self.fft_dict.get(addr, {})
 
-
-    def send_file_to_influx(self, addr):
-        """
-            Gestore della coda: processa tutti i file in attesa per sensore
-                - verifica se in file2s_influx_dict ci sono file per l'invio
-                - per ogni file che trova chiama la worker create_influx_line_protocol
-                - log e pulizia
-        """
-        current_fft_res = self.fft_dict.get(addr, {})
-
-        if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
-            try:
-                self.influx_handler.upload_influx_data(
-                    addr=addr,
-                    files_to_send=self.file2s_influx_dict[addr],
-                    fft_result=current_fft_res,
-                    logger_callback=self.append_history
-                )
+    #     if addr in self.file2s_influx_dict and self.file2s_influx_dict[addr]:
+    #         try:
+    #             self.influx_handler.upload_influx_data(
+    #                 addr=addr,
+    #                 files_to_send=self.file2s_influx_dict[addr],
+    #                 fft_result=current_fft_res,
+    #                 logger_callback=self.append_history
+    #             )
                 
-                # Se upload riuscito (pulizia file in ftp_manager)
-                self.file2s_influx_dict[addr] = []  # Svuota la coda
+    #             # Se upload riuscito (pulizia file in ftp_manager)
+    #             self.file2s_influx_dict[addr] = []  # Svuota la coda
                 
-            except Exception as e:
-                self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
+    #         except Exception as e:
+    #             self.append_history(f"\t[ERROR] Errore Influx per {addr}: {str(e)}\n")
+
 
 
 
@@ -780,6 +791,8 @@ class Gateway:
 
     def main(self):
         try:
+            self.t = datetime.now()
+
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
 
             if payload is None or address is None:

@@ -7,11 +7,13 @@ import os
         - gestisce la connessione FTP e l'upload dei file al server
         - rimuove i file dalla memoria del gateway dopo l'upload
 """
+
+
 class FTPClient:
     def __init__(self, server, user, pwd, path, local_dir):
         self.server = server                    #ftp.wisepower.it
         self.user = user                        #REDACTED
-        self.pwd = pwd                          #password   
+        self.pwd = pwd                          #password 
         self.path = path                        #www.wisepower.it/SHM_Files/Test_Ufficio
         self.local_dir = local_dir              #/etc/config/scripts/SHM_Data/
         
@@ -24,14 +26,15 @@ class FTPClient:
         Returns:
             - status: stringa errore o vuota se ok
     """
+    
     def upload_files(self, addr, files_to_send, logger_callback):
-        
+        # Spedisce la lista di file al server e pulisce la cartella locale
         
         try: 
-            logger_callback(f"\t [FTP] Tentativo di connessione a {self.server}...\n")
+            logger_callback(f"\t[FTP] Tentativo di connessione a {self.server}...\n")
             if not files_to_send:
                 return ""
-            
+
             status = ""
             try:
                 # Apro la sessione e mi connetto
@@ -74,4 +77,4 @@ class FTPClient:
             
             return status
         except Exception as e:
-            logger_callback(f"\t [FTP-ERROR] Errore: {str(e)}")
+            logger_callback(f"\t[FTP-ERROR] Errore: {str(e)}")

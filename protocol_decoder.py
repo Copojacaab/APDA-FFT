@@ -6,6 +6,7 @@ rl = {0x01: '2g', 0x02: '4g', 0x03: '8g'}
 ol = {0x07: '31.25 Hz', 0x06: '62.5 Hz', 0x05: '125 Hz', 0x04: '250 Hz', 0x03: '500 Hz'}
 al = {0x01: ('Xaxis', 'X axis'), 0x02: ('Yaxis', 'Y axis'), 0x03: ('Zaxis', 'Z axis')}
 sl = {0: 'Asynced', 1: 'Synced', 2: 'Synced2'}
+
 class ProtocolDecoder:
     """
     Responsabile per la traduzione dal binario dei sensori a 
@@ -38,16 +39,16 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
-        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
-        #     int(t.microsecond / 1000), delay
-        # )
-        # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
-
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
             int(t.microsecond / 1000), delay
         )
+
+        # Timestamp: yy mm dd hh mm ss (6 bytes) + ms (2 byte) + delay (1 byte)
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
 
         return 'a1' + ts_part
 
@@ -59,16 +60,16 @@ class ProtocolDecoder:
         """
         t = datetime.now(timezone.utc)
 
-        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
-        #     int(t.microsecond / 1000), delay
-        # )
-
-        # 0. Parte comune di timestamp e sync
         ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
-            int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+            int(str(t.year)[-2:]), t.month, t.day, t.hour, 55, t.second, 
             int(t.microsecond / 1000), delay
         )
+
+        # 0. Parte comune di timestamp e sync
+        # ts_part = '%02d%02d%02d%02d%02d%02d%04x%02x' % (
+        #     int(str(t.year)[-2:]), t.month, t.day, t.hour, t.minute, t.second, 
+        #     int(t.microsecond / 1000), delay
+        # )
 
 
         param = config_str.split(' ')
