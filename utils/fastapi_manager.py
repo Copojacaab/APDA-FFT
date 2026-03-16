@@ -14,8 +14,10 @@ class FastAPIHandler:
 
     def _prepare_payload(self, addr, filename, local_dir, fft_result):
         path = os.path.join(local_dir, filename)
+        if not os.path.exists(path):
+            return "FILE NOT FOUND"
+        
         data = load_sensor(path)
-
         if not data:
             return None
 
@@ -73,6 +75,10 @@ class FastAPIHandler:
         for filemame in list(files_to_send):
             payload = self._prepare_payload(addr, filemame, local_dir, fft_result)
 
+            if payload == "FILE NOT FOUND":
+                logger_callback(f"\t[FastAPI][WARN] File {filemame} rimosso\n")
+                # TEST: rimuovo il file dalla coda dei file da inviare
+                files_to_send.remove(filemame)
             if payload:
                 try:
                     data_json = json.dumps(payload).encode('utf-8')

@@ -253,13 +253,7 @@ class Gateway:
             self.process_unknown_data(payload, addr)
 
 
-    # Processa il contenuto del pacchetto 0xA1 (sincronizzazione).
-    # 1 - Verifica che il sensore sia mappato nel file "devices.txt", e nel caso, lo aggiunge alla lista;
-    # 2 - Verifica lo stato del sensore;
-    # 3 - Risponde alla richiesta di sincronizzazione;
-    # 4 - Verifica che non ci siano altri file ancora aperti per quel sensore;
-    # 5 - Sposta i file del dispositivo corrispondente nel server;
-    # 6 - Riporta i risultati nel file "history.log".
+
     def process_sync_data(self, payload, addr):
         """
         The `process_sync_data` function processes synchronization data, checks device status, sends
@@ -275,19 +269,23 @@ class Gateway:
         files, and sending data to specific addresses
         """
 
-        self.append_history('%d/%d/%d, %d:%d:%d, %s - Syncronization request\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        if addr not in self.device_dict: 
-            self.update_device_file(addr)
+        # 1. LOG IMMEDIATO
+        self.append_history('%d/%d/%d, %d:%d:%d, %s - Syncronization request\n' % (
+            self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr
+        ))
 
-        if addr not in self.file2s_fastapi_dict:
-            self.file2s_fastapi_dict[addr] = []
+        # 2.PRIORITA HARDWARE (sync e configurazione)
         device_status = self.check_device(payload)
         config_status = self.send_config(addr)
-        checkF_status = self.check_files(addr, 0)
 
-        # --- NUOVA LOGICA PER LOG PICCHI MULTIPLI ---
+        # Inizializzazione dati per log unico
+        if addr not in self.device_dict:
+            self.update_device_file(addr)
+        if addr not in self.file2s_fastapi_dict:
+            self.file2s_fastapi_dict[addr] = []
+
+        # 3. ANALISI DATI (fft e sys monitor)
         current_fft = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
-
         peaks_list = []
         i = 1
         # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
@@ -301,7 +299,6 @@ class Gateway:
             fft_dict = "Peaks: " + " | ".join(peaks_list) + "\n"
         else:
             fft_dict = "Peaks: None or FFT not run\n"
-        # --------------------------------------------
 
         process_time_cpu = current_fft.get('process_time', -1)
         wall_time_cpu = current_fft.get('wall_time', -1)
@@ -310,31 +307,39 @@ class Gateway:
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 
-        if checkF_status != '':
-            self.append_history("\t" + checkF_status + "\n")
+        # checkF_status = self.check_files(addr, 0)
+        # if checkF_status != '':
+        #     self.append_history("\t" + checkF_status + "\n")
 
-        # INVIO ALLE PIATTAFORME
-        # FastAPI
-        self.fastapi_handler.upload_file(
-            addr=addr,
-            files_to_send=self.file2s_fastapi_dict.get(addr, []),
-            local_dir=self.DATA_DIR,
-            fft_result=self.fft_dict.get(addr, {}),
-            logger_callback=self.append_history
-        )
-        # manda i file accumulati a influx
-        # self.send_file_to_influx(addr)
+        # 4. GESTIONE UPLOAD
+        try:
+            # FastAPI
+            self.fastapi_handler.upload_file(
+                addr=addr,
+                files_to_send=self.file2s_fastapi_dict.get(addr, []),
+                local_dir=self.DATA_DIR,
+                fft_result=self.fft_dict.get(addr, {}),
+                logger_callback=self.append_history
+            )
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
         
-        # invio al server ftp
-        server_status = self.send_file_to_server(addr)
+        try:
+            # invio al server ftp pulisce fisicamente file dal disco
+            server_status = self.send_file_to_server(addr)
+        except Exception as e:
+            server_status = f"Errore critico FTP: {str(e)}"
+            self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
 
+        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
         # Scrittura nel log
-        self.append_history("\t" + device_status + "\t" + fft_dict + "\t" + sys_monitor + "\t" + config_status + "\n")
-        if server_status != '':
-            self.append_history("\t" + server_status + "\n")
+        if server_status:
+            full_log_entry += f"\t[FTP] {server_status}"
+        
+        self.append_history(full_log_entry)
 
-        if addr in self.fft_dict:
-            self.fft_dict.pop(addr)
+        # cleanup finale
+        self.fft_dict.pop(addr, None)
 
 
 
@@ -781,14 +786,14 @@ class Gateway:
 
     def main(self):
         try:
+            self.t = datetime.now()
+
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
 
             if payload is None or address is None:
                 return
             self.original_payload = raw_bytes           # salviamo i byte originali per process_unknown_data
 
-            # Pulizia address
-            
             self.check_device_config()
             self.process_data(payload, address)
         except Exception as e:

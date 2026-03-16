@@ -7,6 +7,8 @@ import os
         - gestisce la connessione FTP e l'upload dei file al server
         - rimuove i file dalla memoria del gateway dopo l'upload
 """
+
+
 class FTPClient:
     def __init__(self, server, user, pwd, path, local_dir):
         self.server = server                    #ftp.wisepower.it
@@ -24,6 +26,7 @@ class FTPClient:
         Returns:
             - status: stringa errore o vuota se ok
     """
+    
     def upload_files(self, addr, files_to_send, logger_callback):
         # Spedisce la lista di file al server e pulisce la cartella locale
         
