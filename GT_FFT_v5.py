@@ -778,12 +778,36 @@ class Gateway:
 
 
 
-    def append_history(self, stringa):
+    def append_history(self, stringa, max_kb=1024):
         """
-            Scrive una riga nel file di history
+            Funzione per aggiornare l'history.log.
+            Controlla che il .log non superi la dimensione massima fissata.
+            Se super max_kb fa un rewrite
         """
-        with open(self.logger_file, 'a') as f:
-            f.write(stringa)
+        try:
+            # Recupero il percorso al file
+            log_path = self.logger_file
+
+            if os.path.exists(log_path):
+                file_size_kb = os.path.getsize(log_path) / 1024
+            
+                if file_size_kb > max_kb:
+                    # LOG ROTATION
+                    old_log = log_path + ".old"
+                    if os.path.exists(old_log):
+                        os.remove(old_log)
+                    os.rename(log_path, old_log)
+
+                    # Apro in modalita write invece di append
+                    with open(log_path, 'w') as f:
+                        f.write(f"--- LOG ROTATION: {datetime.now()} ---\n")
+
+            with open(self.logger_file, 'a') as f:
+                    f.write(stringa)
+        except Exception as e:
+            print(f"[CRICAL] Log Error: {str(e)}")
+
+        
 
     # SPOSTATO IN PROTOCO_DECODER
     # def decode_payload(self, cut_payload, first):
