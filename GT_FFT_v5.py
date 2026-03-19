@@ -37,7 +37,10 @@ class Gateway:
 
     # Inizializzazione della classe Gateway().
     def __init__(self):
-        
+        # Controllo cleaup programmato
+        self.last_cleanup_time = time.time()
+        self.cleanup_interval = 3600                        #cleanup ogni ora
+        self.retention_period_h = 24                        #elimina solo vecchi di un giorno
         # 1. dizionari di stato
         self.device_dict = {}                               #chi e' online?
         self.config_dict = {}                               #config di per ogni device
@@ -754,23 +757,53 @@ class Gateway:
 
 
 
-    def _cleanup_files(self, addr, files_list):
-        """
-        Cancella i file dalla memoria locale dopo un invio riuscito.
+    def scheduled_cleanup(self):
+        """Pulizia periodica dei file orfani"""
+        now = time.time()
+        self.append_history(f"[CLEANUP] Avvio pulizia programmata...\n")
         
-        Args:
-            addr (str): Indirizzo dispositivo
-            files_list (list): Lista di nomi file da cancellare
-        """
-        base_path =  self.DATA_DIR
-        for filename in files_list:
-            full_path = base_path + filename
-            try:
-                if os.path.exists(full_path):
-                    os.remove(full_path)
-                    self.append_history(f"\t[CLEANUP] File rimosso: {filename}\n")
-            except Exception as e:
-                self.append_history(f"\t[ERROR] Impossibile rimuovere {filename}: {str(e)}\n")
+        try:
+            files_on_disk = os.listdir(self.DATA_DIR)
+            
+            for filename in files_on_disk:
+                # filtro per .log
+                if not filename.endswith(".log"):
+                    continue
+                
+                file_path = os.path.join(self.DATA_DIR, filename)
+                
+                # 1. Verifica anzianita
+                file_age_h = (now - os.path.getmtime(file_path)) / 3600
+                if file_age_h < self.retention_period_h:
+                    continue
+                    
+                # 2. Verifica se il file e' in uso (scrittura)
+                file_in_use = False
+                for open_path in self.open_file_dict.values():
+                    if filename in str(open_path):
+                        file_in_use = True
+                        break
+                if file_in_use:
+                    continue
+                
+                # 3. Verifica se in coda di invio
+                is_pending = False
+                for queue in [self.file2s_dict_ftp, self.file2s_fastapi_dict]:
+                    for addr_files in queue.values():
+                        if filename in addr_files:
+                            is_pending = True
+                            break
+                if is_pending:
+                    continue
+                
+                # Se passa tutti i controlli, rimuovo
+                try:
+                    os.remove(file_path)
+                    self.append_history(f"\t[CLEANUP] Rimosso file: {file_path}")
+                except Exception as ex:
+                    self.append_history(f"[CLEANUP-CRITICAL] Impossibile rimuovere {file_path}: {str(e)}")
+        except Exception as e:
+            self.append_history(f"\t[CLEANUP-CRITICAL] Errore durante la scansione: {str(e)}")
 
     """
         Gestore della coda: processa tutti i file in attesa per sensore
@@ -843,6 +876,12 @@ class Gateway:
 
     def main(self):
         try:
+            # Controllo pulizia programmata
+            if (time.time() - self.last_cleanup_time) > self.cleanup_interval:
+                self.scheduled_cleanup()
+                self.last_cleanup_time = time.time()
+                
+            # Ricezione dati
             self.t = datetime.now()
 
             payload, address, raw_bytes = self.xbee.receive_data(self.append_history)
