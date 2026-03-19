@@ -20,6 +20,7 @@ import math
                         "rms_x": -0.0222,
                         "rms_y": ...,
                         ...
+                        "humidity": 85.0
                     },
                     "samples": []
                 }
@@ -54,6 +55,7 @@ def load_sensor(filepath):
     summary["rms_x"] = float(summary_line[1])
     summary["rms_y"] = float(summary_line[2])
     summary["rms_z"] = float(summary_line[3])
+    summary["humidity"] = float(summary_line[4])
 
     # RIGA 3: FIRST_VALUES
     first_values_line = lines[3].strip().split(";")
