@@ -20,6 +20,7 @@ import math
                         "rms_x": -0.0222,
                         "rms_y": ...,
                         ...
+                        "humidity": 85.0
                     },
                     "samples": []
                 }

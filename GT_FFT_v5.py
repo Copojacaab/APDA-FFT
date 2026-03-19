@@ -402,8 +402,8 @@ class Gateway:
         with open(filename, 'w+') as f:
             # ricostruzione header
             f.write(f"{header['time']};{acc_range}{acc_odr}{acc_axis}{sync}")
-            f.write(f"{';'.join(mean_val)};\n")
-            f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};{current_hum};\n")
+            f.write(f"{';'.join(mean_val)};{current_hum};\n")
+            f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};\n")
         
         # 4. Processamento effettivo dei campioni dati
         acq_data = self._process_stream_data(payload[31:], addr, first_value=0, is_append=True)
