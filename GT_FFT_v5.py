@@ -42,7 +42,9 @@ class Gateway:
         self.device_dict = {}                               #chi e' online?
         self.config_dict = {}                               #config di per ogni device
         self.fft_dict = {}                                  #risultati FFT
-
+        
+        self.last_humidity_dict = {}                        #dict per umidita (invio a api)
+        
         # 2. coda di invio
         self.file2s_dict_ftp = {}                           #file da inviare al server
         # self.file2s_influx_dict = {}                        #file da inviare a influx
@@ -274,7 +276,7 @@ class Gateway:
         if addr not in self.device_dict: 
             self.update_device_file(addr)
 
-        device_status = self.check_device(payload)
+        device_status = self.check_device(payload, addr)
         config_status = self.send_config(addr)
 
         # --- NUOVA LOGICA PER LOG PICCHI MULTIPLI ---
@@ -394,11 +396,14 @@ class Gateway:
         self.open_file_dict[addr] = filename
         self.pack_num_dict[addr] = 1
 
+        # umidita da dict di classe
+        current_hum = self.last_humidity_dict.get(addr, 0.0)
+        
         with open(filename, 'w+') as f:
             # ricostruzione header
             f.write(f"{header['time']};{acc_range}{acc_odr}{acc_axis}{sync}")
             f.write(f"{';'.join(mean_val)};\n")
-            f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};\n")
+            f.write(f"{header['baselines'][0]};{header['baselines'][1]};{header['baselines'][2]};{current_hum};\n")
         
         # 4. Processamento effettivo dei campioni dati
         acq_data = self._process_stream_data(payload[31:], addr, first_value=0, is_append=True)
@@ -571,11 +576,12 @@ class Gateway:
 
 
 
-    def check_device(self, p):
+    def check_device(self, p, addr):
 
         # Decoding del payload
         info = ProtocolDecoder.parse_sync_info(p)
-
+        self.last_humidity_dict[addr] = info['humidity']
+        
         # Costruzione del messaggio di status
         status = f"Datetime: {info['datetime']}\n"
 
