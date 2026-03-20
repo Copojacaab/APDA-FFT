@@ -223,7 +223,7 @@ class Gateway:
             
             if current_mtime != self.last_config_mtime:
                 self.append_history(f"[SYSTEM] Modifica in {self.config_file}. Aggiornamento configurazioni...\n")
-
+                
                 self.config_dict = {}
                 with open(self.config_file, 'r') as c:
                     lines = c.readlines()               # Legge tutte le righe insieme.
@@ -231,6 +231,7 @@ class Gateway:
                         config_address = line[:16]      # MAC
                         config_parameters = line[17:]   # Parametri (range, ODR, asse, soglie si shock)
                         self.config_dict[config_address] = config_parameters.strip() 
+                self.last_config_mtime = current_mtime
         except Exception as e:
             self.append_history(f"[ERRORE] Errore durante il controllo del file {self.config_file}: {str(e)}")
                 
@@ -761,11 +762,7 @@ class Gateway:
                     continue
                 
                 file_path = os.path.join(self.DATA_DIR, filename)
-                
-                # 1. Verifica anzianita
                 file_age_h = (now - os.path.getmtime(file_path)) / 3600
-                if file_age_h < self.retention_period_h:
-                    continue
                     
                 # 2. Verifica se il file e' in uso (scrittura)
                 file_in_use = False
@@ -783,15 +780,20 @@ class Gateway:
                         if filename in addr_files:
                             is_pending = True
                             break
-                if is_pending:
-                    continue
                 
-                # Se passa tutti i controlli, rimuovo
-                try:
-                    os.remove(file_path)
-                    self.append_history(f"\t[CLEANUP] Rimosso file: {file_path}")
-                except Exception as ex:
-                    self.append_history(f"[CLEANUP-CRITICAL] Impossibile rimuovere {file_path}: {str(ex)}")
+                # LOGICA DI RIMOZIONE:
+                # - Se non e' nelle code e'stato inviato -> elimino
+                # - Se e' nelle code ma e' piu vecchio di due giorni -> elimino (rinuncio all'invio)
+                # - Se e' orfano (non in coda e non in uso) -> elimino
+                if not is_pending:
+                    if file_age_h > 0.16:   #10 minuti
+                        os.remove(file_path)
+                        self.append_history(f"\t[CLEANUP] Inviato/Orfano rimosso: {filename}\n")
+                else:
+                    # file non ancora inviato -> elimina se supera retention
+                    if file_age_h > self.retention_period_h:
+                        os.remove(file_path)
+                        self.append_history(f"\t[CLEANUP] Timeout invio (48h) rimosso: {filename}")
         except Exception as e:
             self.append_history(f"\t[CLEANUP-CRITICAL] Errore durante la scansione: {str(e)}")
 

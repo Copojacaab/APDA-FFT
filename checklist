@@ -1,7 +1,4 @@
-1. Status log DB: aggiungere una colonna "status" a shm_logs. 'completed' se process_heavy_data_async ha 
-    correttamente caricato i dati su shm_raw
 2. Creare un pool di connessioni al db b2 per non aprire una connessione ogni volta che devo caricare dati o fare richieste
-3. gestione fuori scala in load_data (chiedere informazioni)
 4. modifica memoria volatile code di invio (ftp e api): introdurre un minidb interno? file .sentinel per tenere traccia dei file inviati?
 5. 
 
