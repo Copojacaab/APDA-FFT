@@ -35,6 +35,8 @@ class Gateway:
         self.last_cleanup_time = time.time()
         self.cleanup_interval = 3600                        #cleanup ogni ora
         self.retention_period_h = 24                        #elimina solo vecchi di un giorno
+        
+        self.last_config_mtime = 0                          #ultima modifica config.txt
         # 1. dizionari di stato
         self.device_dict = {}                               #chi e' online?
         self.config_dict = {}                               #config di per ogni device
@@ -210,15 +212,29 @@ class Gateway:
 
     def check_device_config(self):
         """
-            Apre il file di configurazione dei sensori (/scripts/config.txt) e
-            e mappa addr => parametri_sensore
+            Controlla se il file di configurazione dei sensori (/scripts/config.txt) e' stato modificato.
+            Se si, ricarica la mappatura addr => parametri_sensore in memoria
         """
-        with open(self.config_file, 'r') as c:
-            lines = c.readlines()               # Legge tutte le righe insieme.
-            for line in lines:                  # Analizza una riga per volta.
-                config_address = line[:16]      # MAC
-                config_parameters = line[17:]   # Parametri (range, ODR, asse, soglie si shock)
-                self.config_dict[config_address] = config_parameters.strip() 
+        try:
+            if not os.path.exists(self.config_file):
+                return 
+            
+            current_mtime = os.path.getmtime(self.config_file)
+            
+            if current_mtime != self.last_config_mtime:
+                self.append_history(f"[SYSTEM] Modifica in {self.config_file}. Aggiornamento configurazioni...\n")
+
+                self.config_dict = {}
+                with open(self.config_file, 'r') as c:
+                    lines = c.readlines()               # Legge tutte le righe insieme.
+                    for line in lines:                  # Analizza una riga per volta.
+                        config_address = line[:16]      # MAC
+                        config_parameters = line[17:]   # Parametri (range, ODR, asse, soglie si shock)
+                        self.config_dict[config_address] = config_parameters.strip() 
+        except Exception as e:
+            self.append_history(f"[ERRORE] Errore durante il controllo del file {self.config_file}: {str(e)}")
+                
+                
 
     # Processa il payload ricevuto, in base al primo byte del pacchetto.
     # 0xA1 = sincronizzazione;
@@ -291,8 +307,48 @@ class Gateway:
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 
-        return config_status
+        # 4. GESTIONE UPLOAD
+        pending_fastapi = self.file2s_fastapi_dict.get(addr, [])
+        pending_ftp = self.file2s_dict_ftp.get(addr, [])
+        success_fastapi = []
+        success_ftp = []
+        try:
+            # FastAPI
+            success_fastapi = self.fastapi_handler.upload_file(
+                addr=addr,
+                files_to_send=pending_fastapi,
+                local_dir=self.DATA_DIR,
+                fft_result=self.fft_dict.get(addr, {}),
+                logger_callback=self.append_history
+            )
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FastAPI] Errore: {str(e)}\n")
+        try:
+            # FTP
+            success_ftp = self.send_file_to_server(addr)
+        except Exception as e:
+            self.append_history(f"\t[CRITICAL][FTP] Errore: {str(e)}\n")
+        
+        if success_fastapi is None:
+            success_fastapi = []
+        if success_ftp is None:
+            success_ftp = []
 
+        # aggiornamento delle code rimuovendo solamente i successi
+        for file in success_fastapi: 
+            if file in pending_fastapi:
+                pending_fastapi.remove(file)
+        for file in success_ftp:
+            if file in pending_ftp:
+                pending_ftp.remove(file)
+
+        # Cleaup:
+        # solo scheduled (ogni 30 minuti)
+        full_log_entry = f"\t{device_status.strip()}\n\t{fft_dict}\t{sys_monitor}\t{config_status.strip()}\n"
+        self.append_history(full_log_entry)
+
+        
+        self.fft_dict.pop(addr, None)
 
 
     def process_start_stream(self, payload, addr):
@@ -346,7 +402,7 @@ class Gateway:
 
 
     def process_mid_stream(self, payload, addr):
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+        date_time = self.t.strftime('%d_%m_%Y_%H_%M_%S')
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)                   #validazione packet stream
         
@@ -371,7 +427,7 @@ class Gateway:
 
         self.append_history('%d/%d/%d, %d:%d:%d, %s - End data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
 
-        date_time = '%d_%d_%d_%d_%d_%d' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second)
+        date_time = self.t.strftime('%d_%m_%Y_%H_%M_%S')
 
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)
@@ -402,6 +458,7 @@ class Gateway:
             # aggiunta alla coda influxdb e fastapi
             if checkF_status == '':
                 self.file2s_fastapi_dict.setdefault(addr, []).append(file2send)
+                # self.file2s_influx_dict.setdefault(addr, []).append(file2send)
 
         else:
             self.append_history(f"\t[WARN] Nessun file aperto per {addr}\n")
@@ -436,7 +493,7 @@ class Gateway:
 
         # Inserisco nelle code di invi
         file2send = filename.replace(self.DATA_DIR, '')
-        self.file2s_influx_dict.setdefault(addr, []).append(file2send)
+        # self.file2s_influx_dict.setdefault(addr, []).append(file2send)
         self.file2s_dict_ftp.setdefault(addr, []).append(file2send)
 
         # 3. Cleanup: rimuovo dalla gestione stream il file (autoconclusivo)
@@ -475,10 +532,10 @@ class Gateway:
         file2send = filename.replace(self.DATA_DIR, '')
 
         self.file2s_dict_ftp.setdefault(addr, []).append(file2send)
-        self.file2s_influx_dict.setdefault(addr, []).append(file2send)
+        # self.file2s_influx_dict.setdefault(addr, []).append(file2send)
 
         # 5. Invio influx
-        self.send_file_to_influx(addr)
+        # self.send_file_to_influx(addr)
         
         # 6. Invio server FTP
         server_status = self.send_file_to_server(addr)
@@ -734,7 +791,7 @@ class Gateway:
                     os.remove(file_path)
                     self.append_history(f"\t[CLEANUP] Rimosso file: {file_path}")
                 except Exception as ex:
-                    self.append_history(f"[CLEANUP-CRITICAL] Impossibile rimuovere {file_path}: {str(e)}")
+                    self.append_history(f"[CLEANUP-CRITICAL] Impossibile rimuovere {file_path}: {str(ex)}")
         except Exception as e:
             self.append_history(f"\t[CLEANUP-CRITICAL] Errore durante la scansione: {str(e)}")
 
