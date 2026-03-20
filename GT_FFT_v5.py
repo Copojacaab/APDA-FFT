@@ -33,8 +33,8 @@ class Gateway:
     def __init__(self):
         # Controllo cleaup programmato
         self.last_cleanup_time = time.time()
-        self.cleanup_interval = 3600                        #cleanup ogni ora
-        self.retention_period_h = 24                        #elimina solo vecchi di un giorno
+        self.cleanup_interval = 1800                        #cleanup ogni 30min
+        self.retention_period_h = 48                        #elimina solo vecchi di un giorno
         
         self.last_config_mtime = 0                          #ultima modifica config.txt
         # 1. dizionari di stato
