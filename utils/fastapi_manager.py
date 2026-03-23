@@ -9,9 +9,46 @@ from utils.load_data import load_sensor
 
 
 class FastAPIHandler:
-    def __init__(self, url):
+    def __init__(self, url, client_id, client_secret):
         self.url = url
-
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token = None
+        
+    def _get_new_token(self, logger_callback):
+        """
+            Richiede un nuovo JWT 
+        """
+        # Ricostruzione endpoint
+        base_url = self.url.rsplit('/', 1)[0]
+        token_url = f"{base_url}/token"
+        
+        auth_payload = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret
+        }
+        
+        try:
+            data_json = json.dumps(auth_payload).encode('utf-8')
+            req = urllib.request.Request(
+                url = token_url,
+                data = data_json,
+                headers = {'Content-Type': 'application/json'},
+                method='POST'
+            )
+            
+            with urllib.request.urlopen(req, timeout=30) as response:
+                if response.status == 200:
+                    res_body = json.loads(response.read().decode('utf-8'))
+                    self.token = res_body.get("access_token")
+                    logger_callback(f"\t[FASTAPI] Sessione autenticata: nuovo token JWT")
+                    return True
+        except Exception as e:
+            logger_callback(f"\t[FASTAPI][Err AUTH] Login fallito: {str(e)}")
+            return False
+        
+        
+        
     def _prepare_payload(self, addr, filename, local_dir, fft_result):
         path = os.path.join(local_dir, filename)
         if not os.path.exists(path):
@@ -69,30 +106,54 @@ class FastAPIHandler:
 
 
     def upload_file(self, addr, files_to_send, local_dir, fft_result, logger_callback):
+        """
+            Invia i file gestendo autonomamente la validita del token
+        """
         if not files_to_send:
             return
 
+        # 1. Handshake
+        if not self.token:
+            if not self._get_new_token(logger_callback):
+                return []
+            
         uploaded_successfully = []
         for filemame in list(files_to_send):
             payload = self._prepare_payload(addr, filemame, local_dir, fft_result)
 
-            if payload == "FILE NOT FOUND":
-                logger_callback(f"\t[FastAPI][WARN] File {filemame} rimosso\n")
-            if payload:
+            if not payload or payload == "FILE NOT FOUND":
+                continue
+            # Gestione Retry: se il token scade (401) riprovo una volta
+            for attempt in range(2):
                 try:
                     data_json = json.dumps(payload).encode('utf-8')
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': f'Bearer {self.token}'
+                    }
+                    
                     req = urllib.request.Request(
                         url=self.url,
                         data=data_json,
-                        headers={'Content-Type': 'application/json'},
+                        headers=headers,
                         method='POST'
                     )
                     with urllib.request.urlopen(req, timeout=120) as response:
                         if response.status == 200:
                             logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             uploaded_successfully.append(filemame)
-                except Exception as e:
-                    logger_callback(f"\t[FastAPI][ERRORE] {str(e)}")
+                            break
+                        
+                except urllib.error.HTTPError as e:
+                    # Se il srv risponde con 401 => token scaduto
+                    if e.code == 401 and attempt == 0:
+                        logger_callback("\t[FASTAPI] Token scaduto. Avvio retry automatico...\n")
+                        if self._get_new_token(logger_callback):
+                            continue
+                    
+                    logger_callback(f"\t[FastAPI][ERRORE] {filemame}: {str(e)}")
                     return []
+                except Exception as e:
+                    logger_callback(f"\t[FASTAPI][CRITICAL] Errore imprevisto: {str(e)}")
                     
         return uploaded_successfully

@@ -73,7 +73,9 @@ class Gateway:
         )
 
         self.fastapi_handler = FastAPIHandler(
-            url = self.fastapi_url
+            url = self.fastapi_url,
+            client_id = self.fastapi_client_id,
+            client_secret = self.fastapi_client_secret
         )
 
         # 7. creo istanza modulo di connessione radio con i sensori
@@ -119,7 +121,8 @@ class Gateway:
 
                 # parametri fastapi
                 self.fastapi_url = config['fastapi']['url']
-                
+                self.fastapi_client_id = config['fastapi']['client_id']
+                self.fastapi_client_secret = config['fastapi']['client_secret']
                 # percorsi file e impostazioni gateway
                 self.logger_file = config['gateway']['logger_file']
                 self.device_file = config['gateway']['device_file']
@@ -316,6 +319,7 @@ class Gateway:
         try:
             # FastAPI
             success_fastapi = self.fastapi_handler.upload_file(
+                
                 addr=addr,
                 files_to_send=pending_fastapi,
                 local_dir=self.DATA_DIR,
