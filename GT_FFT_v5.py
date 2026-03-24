@@ -48,7 +48,7 @@ class Gateway:
         self.file2s_dict_ftp = {}                           #file da inviare al server
         # self.file2s_influx_dict = {}                        #file da inviare a influx
         self.file2s_fastapi_dict = {}
-
+        self.fastapi_is_registered = None                  # flag di registrazioen api
         # 3. gestione stream e buffer
         self.open_file_dict = {}                           #file aperti
         self.pack_num_dict = {}                             #numero pacchetto atteso
@@ -76,8 +76,20 @@ class Gateway:
             url = self.fastapi_url,
             client_id = self.fastapi_client_id,
             client_secret = self.fastapi_client_secret,
-            reg_token = self.fastapi_reg_token
+            registration_token = self.fastapi_reg_token
         )
+
+        # Controllo registrazione api
+        if not self.fastapi_is_registered:
+            self.append_history("\t[SYSTEM] Gateway non registrato, avvio onboarding API...\n")
+
+            new_secret = self.fastapi_handler.register(self.append_history)
+
+            if new_secret:
+                self.fastapi_client_secret = new_secret
+                self.fastapi_is_registered = True
+                self.save_gateway_config()                                  #salvataggio permanente
+                self.fastapi_handler.get_new_token(self.append_history)             
 
         # 7. creo istanza modulo di connessione radio con i sensori
         self.xbee = XBeeManager(timeout=5)
@@ -103,6 +115,27 @@ class Gateway:
             self.xbee.stop(self.append_history)
 
     # HELPER FUNCTIONS
+    def save_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"):
+        """
+            Aggiorna il config.json su disco aggiungendo la client_secret di fastapi
+        """
+        try:
+            # Leggo il file
+            with(open(config_path, 'r')) as f:
+                config = json.load(f)
+            
+            if 'fastapi' in config:
+                config['fastapi']['client_secret'] = self.fastapi_client_secret
+            
+            # Riscrivo il file
+            with(open(config_path, 'w')) as f:
+                json.dump(config, f, indent=4)
+            
+            self.append_history("\t[SYSTEM] Nuova configurazione caricata correttamente\n")
+        except Exception as e:
+            self.append_history(f"[ERR-SYSTEM] Impossibile salvare la configurazione: {e}\n")
+
+
     def load_gateway_config(self, config_path = "/etc/config/scripts/gw_config.json"): 
         
         self.logger_file = '/etc/config/scripts/SHM_Data/history.log'           # percorso provvisorio per gestire errori iniziali
@@ -133,7 +166,7 @@ class Gateway:
                 
                 # Flag di registrazione api:
                 # T: \token; F:\register
-                self.is_registered_api = self.fastapi_client_secret is not None
+                self.fastapi_is_registered = self.fastapi_client_secret is not None
         except Exception as e: 
             # in caso di errore fermo esecuzione 
             self.append_history(f"ERRORE CRITICO nel caricamento della configurazione: {e}")
@@ -294,24 +327,35 @@ class Gateway:
         current_fft = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
 
         peaks_list = []
+        fft_dict = "None or Not Run"
         i = 1
-        # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
-        while f'peak_freq_{i}' in current_fft:
-            freq = current_fft[f'peak_freq_{i}']
-            mag = current_fft[f'max_mag_{i}']
-            peaks_list.append(f"f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
-            i += 1
+        for axis in current_fft:
+            i = 1
+            axis_data = current_fft[axis]
+            # Continua a cercare finché trova peak_freq_1, peak_freq_2, ecc.
+            while f'peak_freq_{i}' in axis_data:
+                freq = axis_data[f'peak_freq_{i}']
+                mag = axis_data[f'max_mag_{i}']
+                peaks_list.append(f"Axis:{axis} => f{i}: {freq:.4f}Hz (mag: {mag:.4f})")
+                i += 1
 
         if peaks_list:
             fft_dict = "Peaks: " + " | ".join(peaks_list) + "\n"
         else:
             fft_dict = "Peaks: None or FFT not run\n"
         # --------------------------------------------
+        if current_fft: 
+            # Prende il nome del primo asse trovato (es. 'Xaxis')
+            first_axis = list(current_fft.keys())[0]
+            telemetry_data = current_fft[first_axis]
+            
+            process_time_cpu = telemetry_data.get('process_time', -1)
+            wall_time_cpu = telemetry_data.get('wall_time', -1)
+            percentage_cpu = telemetry_data.get('percentage_cpu', -1)
+            peak_memrss = telemetry_data.get('memrss', -1)
+        else:
+            process_time_cpu = wall_time_cpu = percentage_cpu = peak_memrss = -1
 
-        process_time_cpu = current_fft.get('process_time', -1)
-        wall_time_cpu = current_fft.get('wall_time', -1)
-        percentage_cpu = current_fft.get('percentage_cpu', -1)
-        peak_memrss = current_fft.get('memrss', -1)
 
         sys_monitor = f"Process time: {process_time_cpu:.2f}, Wall time: {wall_time_cpu:.2f}, %CPU: {percentage_cpu:.2f}, RAM: {peak_memrss:.2f}"
 

@@ -20,9 +20,12 @@ class FastAPIHandler:
         """
             Esegue l'onboarding del gateway presso l'API
         """    
-        base_url = self.url.rsplit('/', 1)[0]
+        clean_url = self.url.strip().rstrip('/')
+        base_url = clean_url.rsplit('/', 1)[0]
         registration_url = f"{base_url}/register"
-
+    
+        # Debug: aggiungi una stampa per vedere l'URL esatto nei log
+        logger_callback(f"\t[DEBUG] Tentativo di registrazione su: {registration_url}\n")
         payload = {
             "client_id": self.client_id,
             "registration_token": self.reg_token
