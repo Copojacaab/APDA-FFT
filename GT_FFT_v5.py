@@ -75,7 +75,8 @@ class Gateway:
         self.fastapi_handler = FastAPIHandler(
             url = self.fastapi_url,
             client_id = self.fastapi_client_id,
-            client_secret = self.fastapi_client_secret
+            client_secret = self.fastapi_client_secret,
+            reg_token = self.fastapi_reg_token
         )
 
         # 7. creo istanza modulo di connessione radio con i sensori
@@ -122,6 +123,7 @@ class Gateway:
                 # parametri fastapi
                 self.fastapi_url = config['fastapi']['url']
                 self.fastapi_client_id = config['fastapi']['client_id']
+                self.fastapi_reg_token = config['fastapi']['reg_token']
                 self.fastapi_client_secret = config['fastapi']['client_secret']
                 # percorsi file e impostazioni gateway
                 self.logger_file = config['gateway']['logger_file']
@@ -129,7 +131,9 @@ class Gateway:
                 self.config_file = config['gateway']['config_file']
                 self.is_flexibile_structure = config['gateway'].get('is_flexibile_structure', True)
                 
-                print("Configurazione caricata con successo")
+                # Flag di registrazione api:
+                # T: \token; F:\register
+                self.is_registered_api = self.fastapi_client_secret is not None
         except Exception as e: 
             # in caso di errore fermo esecuzione 
             self.append_history(f"ERRORE CRITICO nel caricamento della configurazione: {e}")

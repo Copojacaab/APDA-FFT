@@ -9,13 +9,54 @@ from utils.load_data import load_sensor
 
 
 class FastAPIHandler:
-    def __init__(self, url, client_id, client_secret):
+    def __init__(self, url, client_id, client_secret, registration_token):
         self.url = url
         self.client_id = client_id
         self.client_secret = client_secret
+        self.reg_token = registration_token
         self.token = None
-        
-    def _get_new_token(self, logger_callback):
+
+    def register(self, logger_callback):
+        """
+            Esegue l'onboarding del gateway presso l'API
+        """    
+        base_url = self.url.rsplit('/', 1)[0]
+        registration_url = f"{base_url}/register"
+
+        payload = {
+            "client_id": self.client_id,
+            "registration_token": self.reg_token
+        }
+
+        try:
+            data_json = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                url=registration_url,
+                data=data_json,
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+
+            with urllib.request.urlopen(req, timeout=30) as response:
+                if response.status == 200:
+                    res_body = json.loads(response.read().decode('utf-8'))
+                    # API restituisce client_secret
+                    new_secret = res_body.get('client_secret')
+                    if new_secret:
+                        self.client_secret = new_secret
+                        logger_callback(f"\t[FASTAPI]Registrazione completata con successo (client_secret ricevuta)")
+                        return new_secret       #OUT POSITIVO
+                
+        except urllib.error.HTTPError as e:
+            error_content = e.read().decode('utf-8')
+            logger_callback(f"\t[FASTAPI][Err REG] Errore API ({e.code}): {error_content}")
+        except Exception as e:
+            logger_callback(f"\t[FASTAPI][Err REG] Errore connessione durante registration: {str(e)}")
+
+        return None
+    
+
+    def get_new_token(self, logger_callback):
         """
             Richiede un nuovo JWT 
         """
@@ -114,7 +155,7 @@ class FastAPIHandler:
 
         # 1. Handshake
         if not self.token:
-            if not self._get_new_token(logger_callback):
+            if not self.get_new_token(logger_callback):
                 return []
             
         uploaded_successfully = []
@@ -148,7 +189,7 @@ class FastAPIHandler:
                     # Se il srv risponde con 401 => token scaduto
                     if e.code == 401 and attempt == 0:
                         logger_callback("\t[FASTAPI] Token scaduto. Avvio retry automatico...\n")
-                        if self._get_new_token(logger_callback):
+                        if self.get_new_token(logger_callback):
                             continue
                     
                     logger_callback(f"\t[FastAPI][ERRORE] {filemame}: {str(e)}")
