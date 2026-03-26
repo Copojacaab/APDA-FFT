@@ -323,7 +323,6 @@ class Gateway:
         device_status = self.check_device(payload, addr)
         config_status = self.send_config(addr)
 
-        # --- NUOVA LOGICA PER LOG PICCHI MULTIPLI ---
         current_fft = self.fft_dict.get(addr, {})                             #se non c'e' FFT per questo addr, uso dict di default
 
         peaks_list = []
