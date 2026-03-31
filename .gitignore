@@ -1,6 +1,7 @@
 # Secrets — never commit real credentials
 configs/gw_config.json
 configs/gw_create.json
+configs/config.txt
 # Runtime data (generated on IX15 device)
 *.log
 *.sentinel

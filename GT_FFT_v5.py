@@ -393,6 +393,12 @@ class Gateway:
         for file in success_ftp:
             if file in pending_ftp:
                 pending_ftp.remove(file)
+                if file not in pending_fastapi:         
+                    try:
+                        os.remove(os.path.join(self.DATA_DIR, file))
+                    except (FileNotFoundError, OSError):
+                        pass
+                
 
         # Cleaup:
         # solo scheduled (ogni 30 minuti)
@@ -591,7 +597,7 @@ class Gateway:
         
         # 6. Invio server FTP
         server_status = self.send_file_to_server(addr)
-        self.append_history("\t" + server_status + "\n")
+        self.append_history(f"\t{server_status}\n")
 
         self.open_file_dict.pop(addr, None)
         self.first_data_dict.pop(addr, None)
@@ -603,8 +609,10 @@ class Gateway:
                 aggiungo evento all'history e skippo
         """
         self.append_history('%d/%d/%d, %d:%d:%d, %s - Unexpected data transmission\n' % (self.t.day, self.t.month, self.t.year, self.t.hour, self.t.minute, self.t.second, addr))
-        self.append_history("\t" + self.original_payload.hex() + "\n") #cambiato da encode a hex
-
+        if self.original_payload is not None:
+            self.append_history("\t" + self.original_payload.hex() + "\n") #cambiato da encode a hex
+        else:
+            self.append_history("\t[No payload available]\n")
 
 
     def update_device_file(self, addr):
@@ -670,18 +678,21 @@ class Gateway:
             data_loaded = load_sensor(log_file_path)
             if data_loaded is None:
                 self.append_history(f"\t[WARN] File {log_file_path} corrotto o incompleto, salto FFT\n")
+                return
             samples = data_loaded["samples"]
             fs = data_loaded["metadata"]["fs"]
             axis = data_loaded["metadata"]["axis"]
             
+            res_fft = None
             if(len(samples) > 0):
                 res_fft = start_fft(samples, fs)                            # risultati fft
             else:
                 print(f"\t[WARNING] Nessun campione nel file per FFT")
 
-            if self.is_flexibile_structure:
+            peaks = None
+            if self.is_flexibile_structure and res_fft:
                 peaks = get_top_peaks_prominence(res_fft, fs)
-            elif not self.is_flexibile_structure:
+            elif not self.is_flexibile_structure and res_fft:
                 peaks = get_top_peaks_resolution(res_fft, fs)
             
             if addr not in self.fft_dict:
@@ -701,7 +712,7 @@ class Gateway:
                     self.fft_dict[addr][axis][f'peak_freq_{i+1}'] = p['freq']
                     self.fft_dict[addr][axis][f'max_mag_{i+1}'] = p['mag']
             else:
-                print(f"\t[WARNING] nessun campione nel file per FFT per sensore {addr}")
+                self.append_history(f"\t[WARN] Nessun campione nel file per FFT\n")
             
             end_cpu = time.process_time()
             end_wall = time.perf_counter()                                  # snapshot finale
@@ -719,7 +730,7 @@ class Gateway:
             self.fft_dict[addr][axis]["memrss"] = mem_peal
 
         except Exception as e:
-            print(f"\t[ERROR] Errore durante FFT: {str(e)}\n")
+            self.append_history(f"\t[ERROR] Errore durante FFT: {str(e)}\n")
 
 
 

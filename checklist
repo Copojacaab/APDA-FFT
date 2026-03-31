@@ -1,4 +1,60 @@
-2. Creare un pool di connessioni al db b2 per non aprire una connessione ogni volta che devo caricare dati o fare richieste
-4. modifica memoria volatile code di invio (ftp e api): introdurre un minidb interno? file .sentinel per tenere traccia dei file inviati?
-5. 
+# APDA-FFT — Audit Fix Checklist
+# Generated: 2026-03-31 | Total issues: 26
+# Format: [x] = done, [ ] = pending
 
+# =============================================================================
+# CRITICAL (4) — Fix immediately
+# =============================================================================
+
+[x] C-01 | CRITICAL | Credentials purged from git history + .gitignore prevents re-tracking | configs/gw_config.json, .gitignore | DONE
+[ ] C-02 | CRITICAL | Unbounded in-memory upload queues — data loss on crash/reboot | GT_FFT_v5.py | 48-50
+[x] C-03 | CRITICAL | FFT pipeline continues after load_sensor returns None — silent TypeError | GT_FFT_v5.py | 669-676
+[x] C-04 | CRITICAL | FTP upload never deletes local files after success — disk space exhaustion | utils/ftp_manager.py | 47-64
+
+# =============================================================================
+# HIGH (8) — Fix before next deployment
+# =============================================================================
+
+[ ] H-01 | HIGH | process_reduced_stream_data appends same filename to FTP queue twice | GT_FFT_v5.py | 548-553
+[ ] H-02 | HIGH | check_files() closes stream on dup packet but caller continues processing data | GT_FFT_v5.py | 762-771 + callers 459, 485
+[ ] H-03 | HIGH | statistics.stdev() crashes on <2 magnitude bins (short recordings) | utils/get_peak_prominence.py:164, utils/get_peak_resolution.py:89
+[ ] H-04 | HIGH | _known_devices dict grows unbounded — no eviction policy | protocol_radio.py | 72
+[ ] H-05 | HIGH | FastAPI upload_file returns [] on first HTTP error, abandoning remaining files | utils/fastapi_manager.py | 199
+[ ] H-06 | HIGH | parse_sync_info indexes payload without length validation for most fields | protocol_decoder.py | 179-189
+[ ] H-07 | HIGH | build_config_packet returns sync packet (0xA1) on insufficient params — caller thinks it's 0xA2 | protocol_decoder.py | 76-77
+[ ] H-08 | HIGH | Pure-Python FFT blocks main loop — missed radio packets during computation | metrics/fft_iterativa.py | 38-70
+
+# =============================================================================
+# MEDIUM (8) — Fix in next sprint
+# =============================================================================
+
+[ ] M-01 | MEDIUM | build_sync_packet and build_config_packet hardcode minute=55 instead of t.minute | protocol_decoder.py | 42-43, 64-65
+[ ] M-02 | MEDIUM | scheduled_cleanup uses substring match for open file check — false positives | GT_FFT_v5.py | 820-822
+[ ] M-03 | MEDIUM | append_history log rotation has race condition between size check and write | GT_FFT_v5.py | 889-908
+[ ] M-04 | MEDIUM | load_sensor has no exception handling for file I/O (IOError, PermissionError) | utils/load_data.py | 34-38
+[ ] M-05 | MEDIUM | get_top_peaks_resolution: IndexError on frequencies[2]-frequencies[1] if half_len < 3 | utils/get_peak_resolution.py | 117
+[ ] M-06 | MEDIUM | FTP connection created per upload — no connection pooling or reuse | utils/ftp_manager.py | 41-43
+[ ] M-07 | MEDIUM | work_flow_fft uses print() instead of append_history() for warnings/errors | GT_FFT_v5.py | 679, 703, 721
+[ ] M-08 | MEDIUM | process_sync_data reads telemetry from arbitrary first axis (non-deterministic dict order) | GT_FFT_v5.py | 346-356
+
+# =============================================================================
+# LOW (6) — Fix when convenient
+# =============================================================================
+
+[ ] L-01 | LOW | Typo: variable named mem_peal instead of mem_peak | GT_FFT_v5.py | 714
+[ ] L-02 | LOW | update_device_file delay logic is opaque — developer comment says "non so perche" | GT_FFT_v5.py | 610-618
+[x] L-03 | LOW | process_unknown_data calls self.original_payload.hex() without None check | GT_FFT_v5.py | 607
+[ ] L-04 | LOW | No __init__.py in metrics/ and utils/ subpackages | metrics/__init__.py, utils/__init__.py
+[ ] L-05 | LOW | decode_samples silently drops last byte on odd-length payloads — no warning | protocol_decoder.py | 171-174
+[ ] L-06 | LOW | Duplicated timestamp formatting logic in build_sync_packet and build_config_packet | protocol_decoder.py | 40-53, 61-73
+
+# =============================================================================
+# EXISTING TODOs (from original checklist)
+# =============================================================================
+
+[ ] T-01 | MEDIUM | Create DB connection pool to avoid opening a connection per upload/request
+[ ] T-02 | CRITICAL | Improve volatile memory send queues (FTP & API): mini-DB or .sentinel files
+
+# =============================================================================
+# Progress: 1/28 completed
+# =============================================================================
