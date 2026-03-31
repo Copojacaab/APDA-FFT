@@ -73,8 +73,8 @@ class ProtocolDecoder:
 
 
         param = config_str.split(' ')
-        if len(param) < 17:                     #fallback a sync1 se parametri insufficienti
-            return 'a1' + ts_part
+        if len(param) < 17:                     #fallback a sync1 se parametri insufficienti (gestito in GT_FFT)
+            return None
 
         # Configurazione SHM
         acc = ProtocolDecoder.RANGE_MAP.get(param[0], 0x04)
@@ -176,6 +176,15 @@ class ProtocolDecoder:
     
     @staticmethod
     def parse_sync_info(p):
+        if len(p) < 18:
+            return {
+                "datetime": "unknown",
+                "battery": None, "rssi": None, "temp": None,
+                "humidity": None, "reset_bit": None,
+                "gps_status": None,
+                "errors": {"362": 0, "355": 0, "mem": 0, "radio": 0, "config": 0}
+            }
+        
         return {
             "datetime": f"{p[1]:x}-{p[2]:x}-{p[3]:x} {p[4]:x}:{p[5]:x}:{p[6]:x}",
             "battery": ((p[32] + (p[33] << 8)) * 0.001) if len(p) > 33 else None,

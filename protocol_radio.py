@@ -1,3 +1,5 @@
+from typing import Callable, Tuple, Optional, List
+
 from digidevice import xbee
 
 class XBeeManager:
@@ -46,7 +48,7 @@ class XBeeManager:
                 logger_callback(f"\t[Radio-ERROR] Errore durante la chiusura del modulo XBee: {str(e)}")
 
 
-    def receive_data(self, logger_callback):
+    def receive_data(self, logger_callback: Callable[[str], None]) -> Tuple[Optional[List[int]], Optional[str], Optional[bytes]]:
         """
             Si mette in ascolto di nuovi pacchetti dai sensori per self.timeout s:
                 - Se non arriva nulla => restituisce None 
@@ -55,6 +57,9 @@ class XBeeManager:
                 tuple: (payload_list, address_str, payload_raw_bytes)
         """
         try:
+            if self.device is None:
+                return None, None, None
+            
             xbee_message = self.device.read_data(timeout=self.timeout)
 
             if xbee_message is None:
@@ -70,6 +75,8 @@ class XBeeManager:
 
             # salvo/aggiorno il dispositivo nella rubrica
             self._known_devices[addr] = remote_device
+
+            # PER TEST INSERIRE UNA LOGICA DI RIMOZIONE (crescita unbound)
 
             payload_bytes = xbee_message.data
 
@@ -89,7 +96,9 @@ class XBeeManager:
         """
         try:
             remote_device = self._get_remote_device(addr)
-
+            if not self.device:
+                return False
+            
             if remote_device:
                 payload_bytes = bytes.fromhex(hex_payload)
                 self.device.send_data(remote_device, payload_bytes)

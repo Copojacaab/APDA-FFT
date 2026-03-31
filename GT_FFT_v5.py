@@ -748,7 +748,12 @@ class Gateway:
         if addr in self.config_dict:
             # Se gia presente => genera pacchetto riconfig (0xA2)
             config_hex = ProtocolDecoder.build_config_packet(self.config_dict[addr], delay)
-            status = 'Sent reconfiguration\n'
+            if config_hex is None: 
+                # Fallback a sync1
+                config_hex = ProtocolDecoder.build_sync_packet(delay)
+                status = 'Config incompleta, fallback a Sync\n'
+            else: 
+                status = 'Sent reconfiguration \n'
         else:
             # Invio semplicemnete pacchettodi sync 
             # Altrimenti => genera pacchetto Sync (0xA1)

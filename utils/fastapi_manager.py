@@ -187,7 +187,7 @@ class FastAPIHandler:
                             logger_callback(f"\t[FastAPI] OK. {filemame} salvato con MAC {addr}\n")
                             uploaded_successfully.append(filemame)
                             break
-                        
+            
                 except urllib.error.HTTPError as e:
                     # Se il srv risponde con 401 => token scaduto
                     if e.code == 401 and attempt == 0:
@@ -196,8 +196,9 @@ class FastAPIHandler:
                             continue
                     
                     logger_callback(f"\t[FastAPI][ERRORE] {filemame}: {str(e)}")
-                    return []
+                    break # -> retry loop, continue to the next file
                 except Exception as e:
                     logger_callback(f"\t[FASTAPI][CRITICAL] Errore imprevisto: {str(e)}")
+                    break
                     
         return uploaded_successfully

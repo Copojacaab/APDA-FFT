@@ -18,10 +18,9 @@
 [x] H-01 | HIGH | process_reduced_stream_data appends same filename to FTP queue twice | GT_FFT_v5.py | 548-553
 [x] H-02 | HIGH | check_files() closes stream on dup packet but caller continues processing data | GT_FFT_v5.py | 762-771 + callers 459, 485
 [x] H-03 | HIGH | statistics.stdev() crashes on <2 magnitude bins (short recordings) | utils/get_peak_prominence.py:164, utils/get_peak_resolution.py:89
-[ ] H-04 | HIGH | _known_devices dict grows unbounded — no eviction policy | protocol_radio.py | 72
-[ ] H-05 | HIGH | FastAPI upload_file returns [] on first HTTP error, abandoning remaining files | utils/fastapi_manager.py | 199
-[ ] H-06 | HIGH | parse_sync_info indexes payload without length validation for most fields | protocol_decoder.py | 179-189
-[ ] H-07 | HIGH | build_config_packet returns sync packet (0xA1) on insufficient params — caller thinks it's 0xA2 | protocol_decoder.py | 76-77
+[x] H-05 | HIGH | FastAPI upload_file returns [] on first HTTP error, abandoning remaining files | utils/fastapi_manager.py | 199
+[x] H-06 | HIGH | parse_sync_info indexes payload without length validation for most fields | protocol_decoder.py | 179-189
+[x] H-07 | HIGH | build_config_packet returns sync packet (0xA1) on insufficient params — caller thinks it's 0xA2 | protocol_decoder.py | 76-77
 [ ] H-08 | HIGH | Pure-Python FFT blocks main loop — missed radio packets during computation | metrics/fft_iterativa.py | 38-70
 
 # =============================================================================
