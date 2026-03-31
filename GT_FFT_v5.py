@@ -418,8 +418,10 @@ class Gateway:
         """
         self.append_history(f'{self.t.strftime("%d/%m/%Y, %H:%M:%S")}, {addr} - Start data transmission\n')
         checkF_status = self.check_files(addr, 1)
-        if checkF_status != '':
+
+        if "Anomalous closure" in checkF_status:
             self.append_history("\t" + checkF_status + "\n")
+            return
 
         # 0. Parsing tramite Decoder
         header = ProtocolDecoder.parse_start_header(payload)
@@ -464,15 +466,16 @@ class Gateway:
         n_pck = ProtocolDecoder.get_packet_number(payload)
         checkF_status = self.check_files(addr, n_pck)                   #validazione packet stream
         
-        if checkF_status != '':                                 #check se pkg e' ok
+        if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
-                filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
+                filename = self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
                 self.open_file_dict[addr] = filename
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
-
+            return 
+        
         first_val = self.first_data_dict.get(addr, 0)           #valore baseline
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
@@ -493,11 +496,13 @@ class Gateway:
         if checkF_status != '':
             self.append_history("\t" + checkF_status + "\n")
             if "Anomalous closure" in checkF_status:
-                filename =  self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
+                filename = self.DATA_DIR + addr + '_UnknownAxis_' + date_time + '.log'
                 self.file2s_dict_ftp[addr] = [filename]
                 self.open_file_dict[addr] = filename
                 with open(filename, 'w+') as f:
                     f.write('* MISSING PACKETS FROM 1 TO %d *;' % (n_pck - 1))
+            return
+        
         first_val = self.first_data_dict.get(addr, 0)
         acq_data = self._process_stream_data(payload[3:], addr, first_val, is_append=True)
 
@@ -556,7 +561,6 @@ class Gateway:
 
         # 3. Cleanup: rimuovo dalla gestione stream il file (autoconclusivo)
         self.open_file_dict.pop(addr, None)
-        self.file2s_dict_ftp.setdefault(addr, []).append(filename.replace(self.DATA_DIR, ''))       #inserisce nella coda FTP
 
 
 

@@ -159,6 +159,9 @@ def get_top_peaks_prominence(res_fft, fs, k=4):
     magnitudes = [abs(res_fft[i]) for i in range(half_len)]
     frequencies = [i * (fs/n) for i in range(half_len)]
 
+    if len(magnitudes) < 2:
+        return []
+    
     # Soglia dinamica per rumore di fondo
     avg = statistics.mean(magnitudes)
     std = statistics.stdev(magnitudes)

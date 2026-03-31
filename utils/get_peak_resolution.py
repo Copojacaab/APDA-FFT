@@ -84,6 +84,9 @@ def get_top_peaks_resolution(fft_res, fs, k=5):
     magnitudes = [abs(fft_res[i]) for i in range(half_len)]
     frequencies = [i * (fs / n) for i in range(half_len)]
     
+    if len(magnitudes) < 2:
+        return []
+    
     # Soglia minima per non prendere il rumore di fondo
     avg = statistics.mean(magnitudes)
     std = statistics.stdev(magnitudes)
