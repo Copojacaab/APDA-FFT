@@ -1,0 +1,36 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "model": "qwen-3.6-plus",
+      "description": "Primary build and development agent",
+      "prompt": "You are the primary build agent. Follow the technical guidelines in AGENTS.md for every implementation.",
+      "tools": {
+        "write": true,
+        "edit": true,
+        "bash": true
+      }
+    },
+    "criticality-analyst": {
+      "mode": "primary",
+      "model": "qwen-3.6-plus",
+      "description": "Security and Quality Analyst for SHM Data Hub",
+      "prompt": "You are the Primary Criticality Analyst for the SHM Data Hub project. Your role is to perform high-level technical audits of the codebase and logs to identify risks, bugs, and architectural inconsistencies. You must strictly follow the guidelines defined in AGENTS.md but apply them to the entire system logic. You are NOT authorized to modify any files. For every issue found, provide a report including: Severity, Location, Technical Violation, and a theoretical recommendation for the fix. Do not provide code implementations.",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": true
+      }
+    },
+    "plan": {
+      "mode": "primary",
+      "model": "qwen-3.6-plus",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    }
+  }
+}

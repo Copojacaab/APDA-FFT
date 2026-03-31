@@ -1,0 +1,17 @@
+# Secrets — never commit real credentials
+configs/gw_config.json
+configs/gw_create.json
+# Runtime data (generated on IX15 device)
+*.log
+*.sentinel
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+# OS / editor
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
