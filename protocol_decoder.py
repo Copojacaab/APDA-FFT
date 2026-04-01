@@ -135,7 +135,7 @@ class ProtocolDecoder:
         hex_char = (high_byte << 8) | low_byte                          #combina i due byte in un intero a 16 bit
         exponent = (hex_char & exp_mask) >> 10
         sign = -1 if (hex_char & sign_mask) else 1
-        mantissa = (hex_char & mantissa_mask) / 1024.0
+        mantissa = (hex_char & mantissa_mask) / 1000.0
 
         if exponent == 31:
             return float('nan') if mantissa != 0 else float('inf')
