@@ -231,9 +231,12 @@ class ProtocolDecoder:
 
     @staticmethod
     def parse_shock_header(p):
-        "Parsa l'header del pachetto 0xC1 (evento shock)"
+        "Parsa l'header del pachetto 0xC1 (evento shock sotto soglia)"
         return {
-            "time": f"{p[1]:x}:{p[2]:x}:{p[3]:x}"
+            "time": f"{p[1]:x}:{p[2]:x}:{p[3]:x}",
+            "avg_x": (p[4] << 8) | p[5],
+            "avg_y": (p[6] << 8) | p[7],
+            "avg_z": (p[8] << 8) | p[9],
         }
     
     @staticmethod

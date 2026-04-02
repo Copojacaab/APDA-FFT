@@ -201,7 +201,6 @@ class Gateway:
             if addr in self.open_file_dict and os.path.exists(self.open_file_dict[addr]):
                 file_path = self.open_file_dict[addr]
                 mode = 'a' if is_append else 'w+'                       #append o scrivi nuovo
-
                 try:
                     with open(file_path, mode) as f:
                         for d in acq_data:
@@ -582,13 +581,10 @@ class Gateway:
 
         # 1. Scrittura header
         with open(filename, 'w+') as f:
-            f.write(f"{header['time']};2g;100Hz;Unknown_axis; \n")  # Riga 0: Header
-            f.write("Asynced;\n")                                   # Riga 1: Sync
-            f.write("0;0;0;0;\n")                                   # Riga 2: Summary (Temp, RMS)
-            f.write("0;0;0;\n")                                     # Riga 3: First Values
-
-        # 2. Decoding e scrittura su file
-        self._process_stream_data(payload[4:], addr, first_value=0, is_append=True)
+            f.write(f"{header['time']};shock_event;ADXL362;shock; \n")              # Riga 0: Header
+            f.write("Asynced;\n")                                                   # Riga 1: Sync
+            f.write(f"0;{header['avg_x']};{header['avg_y']};{header['avg_z']}\n")   # Riga 2: Average Values                                # Riga 2: Summary (Temp, RMS)
+            f.write("-1;-1;-1;\n")                                                     # Riga 3: First Values
 
         # 3. Aggiunta dei file alle code
         file2send = filename.replace(self.DATA_DIR, '')

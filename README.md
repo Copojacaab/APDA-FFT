@@ -64,3 +64,11 @@ NOTA: `is_flexbile_structure` definisce quale metodo di peak detection utilizzar
 ### Start
 Una volta creata l'opportuna struttura delle directory e il file di configurazione si puo' avviare il sistema tramite l'esecuzione del file `GT_FFT_v3.py`
 
+### Dependencies 
+
+- load_sensor() si aspetta:
+    Line 0: timestamp;sensitivity;fs;axis;
+    Line 1: sync_type;
+    Line 2: temperature;rms_x;rms_y;rms_z;humidity;
+    Line 3: first_x;first_y;first_z;
+    Line 4+: samples...
